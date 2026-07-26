@@ -1,0 +1,38 @@
+{
+  "schema": "helianthus-modbus-boundary/v1",
+  "mode": "read_only",
+  "allowed_operations": [
+    {
+      "function_code": 3,
+      "name": "read_holding_registers"
+    },
+    {
+      "function_code": 4,
+      "name": "read_input_registers"
+    },
+    {
+      "function_code": 43,
+      "mei_type": 14,
+      "name": "read_device_identification"
+    }
+  ],
+  "allowed_project_import_prefixes": [
+    "github.com/Project-Helianthus/helianthus-modbus"
+  ],
+  "forbidden_source_tokens": [
+    "fronius",
+    "growatt",
+    "huawei",
+    "sunspec",
+    "writesinglecoil",
+    "writesingleregister",
+    "writemultiplecoils",
+    "writemultipleregisters",
+    "maskwriteregister",
+    "readwritemultipleregisters",
+    "arbitraryfunction",
+    "customfunction",
+    "functioncodeoverride"
+  ],
+  "write_support": "separate_plan_required"
+}

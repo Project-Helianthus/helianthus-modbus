@@ -1,6 +1,10 @@
 {
   "schema": "helianthus-modbus-boundary/v1",
   "mode": "read_only",
+  "implementation_lock": "bootstrap_only",
+  "allowed_product_go_files": [
+    "doc.go"
+  ],
   "allowed_operations": [
     {
       "function_code": 3,

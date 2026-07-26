@@ -14,6 +14,8 @@ from typing import Iterable
 EXPECTED_POLICY = {
     "schema": "helianthus-modbus-boundary/v1",
     "mode": "read_only",
+    "implementation_lock": "bootstrap_only",
+    "allowed_product_go_files": ["doc.go"],
     "allowed_operations": [
         {"function_code": 3, "name": "read_holding_registers"},
         {"function_code": 4, "name": "read_input_registers"},
@@ -79,6 +81,24 @@ def validate_go_sources(root: Path, policy: dict[str, object]) -> None:
                 raise PolicyError(f"{path.relative_to(root)} contains forbidden token {token}")
 
 
+def validate_bootstrap_lock(root: Path, policy: dict[str, object]) -> None:
+    if policy["implementation_lock"] != "bootstrap_only":
+        raise PolicyError("implementation lock must remain bootstrap_only")
+    allowed = {str(item) for item in policy["allowed_product_go_files"]}
+    actual = {
+        path.relative_to(root).as_posix()
+        for path in root.rglob("*.go")
+        if ".git" not in path.parts
+    }
+    unexpected = actual - allowed
+    missing = allowed - actual
+    if unexpected or missing:
+        raise PolicyError(
+            f"bootstrap Go-file lock mismatch: unexpected={sorted(unexpected)} "
+            f"missing={sorted(missing)}"
+        )
+
+
 def go_imports(root: Path) -> list[str]:
     result = subprocess.run(
         [
@@ -101,6 +121,7 @@ def go_imports(root: Path) -> list[str]:
 
 def validate(root: Path) -> None:
     policy = load_policy(root)
+    validate_bootstrap_lock(root, policy)
     validate_imports(go_imports(root), policy)
     validate_go_sources(root, policy)
 

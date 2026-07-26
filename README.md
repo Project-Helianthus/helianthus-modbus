@@ -62,12 +62,16 @@ Run the complete local gate:
 The gate validates the exact machine-readable
 [`policy/phase1-readonly.json`](policy/phase1-readonly.json), rejects
 unauthorized Helianthus dependencies and vendor/write surface tokens, and runs
-mutation tests for those boundaries.
+mutation tests for those boundaries. The bootstrap policy also permits only
+`doc.go`; any PDU, transport, test, or other Go implementation file fails CI.
+The authorized M1 implementation must replace this lock explicitly through its
+test-first issue and merged M1 companion contract.
 
 The repository follows one issue and one pull request at a time, squash merge,
 strict test-first implementation, and applicable documentation/protocol gates.
 GitHub protects `main` with required `checks` and `lint` jobs, linear history,
-conversation resolution, and disabled merge/rebase commit methods.
+conversation resolution, one independent approval after the last push
+(including for administrators), and disabled merge/rebase commit methods.
 See [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md).
 
 ## License

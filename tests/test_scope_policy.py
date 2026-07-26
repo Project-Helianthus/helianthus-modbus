@@ -45,6 +45,17 @@ class ScopePolicyTests(unittest.TestCase):
                 validator.EXPECTED_POLICY,
             )
 
+    def test_token_free_generic_pdu_file_is_rejected_by_bootstrap_lock(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "doc.go").write_text("package modbus\n", encoding="utf-8")
+            (root / "pdu.go").write_text(
+                "package modbus\nfunc request(code byte) []byte { return []byte{code} }\n",
+                encoding="utf-8",
+            )
+            with self.assertRaises(validator.PolicyError):
+                validator.validate_bootstrap_lock(root, validator.EXPECTED_POLICY)
+
     def test_vendor_semantics_in_go_source_are_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

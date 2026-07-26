@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import subprocess
@@ -16,6 +17,9 @@ EXPECTED_POLICY = {
     "mode": "read_only",
     "implementation_lock": "bootstrap_only",
     "allowed_product_go_files": ["doc.go"],
+    "allowed_product_go_sha256": {
+        "doc.go": "a36e258cf12fd6009f6adb3fa9a27f650c8598eb9fc52087def24f1ade970c02"
+    },
     "allowed_operations": [
         {"function_code": 3, "name": "read_holding_registers"},
         {"function_code": 4, "name": "read_input_registers"},
@@ -97,6 +101,16 @@ def validate_bootstrap_lock(root: Path, policy: dict[str, object]) -> None:
             f"bootstrap Go-file lock mismatch: unexpected={sorted(unexpected)} "
             f"missing={sorted(missing)}"
         )
+    expected_hashes = {
+        str(path): str(digest)
+        for path, digest in policy["allowed_product_go_sha256"].items()
+    }
+    if set(expected_hashes) != allowed:
+        raise PolicyError("bootstrap Go-file hash inventory differs from allowed files")
+    for relative, expected in expected_hashes.items():
+        actual = hashlib.sha256((root / relative).read_bytes()).hexdigest()
+        if actual != expected:
+            raise PolicyError(f"bootstrap Go-file content changed: {relative}")
 
 
 def go_imports(root: Path) -> list[str]:

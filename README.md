@@ -70,8 +70,10 @@ test-first issue and merged M1 companion contract.
 The repository follows one issue and one pull request at a time, squash merge,
 strict test-first implementation, and applicable documentation/protocol gates.
 GitHub protects `main` with required `checks` and `lint` jobs, linear history,
-conversation resolution, one independent approval after the last push
-(including for administrators), and disabled merge/rebase commit methods.
+conversation resolution, and disabled merge/rebase commit methods. A separate
+required `adversarial-review` status is emitted only for an exact head that has
+a fresh OpenAI-only `NO_FINDINGS` verdict. All protections apply to
+administrators.
 See [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md).
 
 ## License

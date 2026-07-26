@@ -1,0 +1,45 @@
+{
+  "schema": "helianthus-modbus-boundary/v1",
+  "mode": "read_only",
+  "implementation_lock": "bootstrap_only",
+  "allowed_product_go_files": [
+    "doc.go"
+  ],
+  "allowed_product_go_sha256": {
+    "doc.go": "a36e258cf12fd6009f6adb3fa9a27f650c8598eb9fc52087def24f1ade970c02"
+  },
+  "allowed_operations": [
+    {
+      "function_code": 3,
+      "name": "read_holding_registers"
+    },
+    {
+      "function_code": 4,
+      "name": "read_input_registers"
+    },
+    {
+      "function_code": 43,
+      "mei_type": 14,
+      "name": "read_device_identification"
+    }
+  ],
+  "allowed_project_import_prefixes": [
+    "github.com/Project-Helianthus/helianthus-modbus"
+  ],
+  "forbidden_source_tokens": [
+    "fronius",
+    "growatt",
+    "huawei",
+    "sunspec",
+    "writesinglecoil",
+    "writesingleregister",
+    "writemultiplecoils",
+    "writemultipleregisters",
+    "maskwriteregister",
+    "readwritemultipleregisters",
+    "arbitraryfunction",
+    "customfunction",
+    "functioncodeoverride"
+  ],
+  "write_support": "separate_plan_required"
+}

@@ -23,8 +23,9 @@ type DeviceIDConformity byte
 
 // DeviceIDRequest is an exact FC2B/MEI0E request.
 type DeviceIDRequest struct {
-	access   DeviceIDAccess
-	objectID byte
+	access       DeviceIDAccess
+	objectID     byte
+	continuation bool
 }
 
 // DeviceIDObject retains an object's exact length-delimited bytes.
@@ -79,7 +80,37 @@ func NewDeviceIDRequest(
 			2,
 		)
 	}
+	if access != DeviceIDIndividual && objectID != 0 {
+		return DeviceIDRequest{}, protocolError(
+			ErrorInvalidRequest,
+			FunctionEncapsulatedInterface,
+			0,
+			"initial_cursor",
+			3,
+		)
+	}
 	return DeviceIDRequest{access: access, objectID: objectID}, nil
+}
+
+// NextDeviceIDRequest binds a continuation request to its prior segment.
+func NextDeviceIDRequest(segment DeviceIDSegment) (DeviceIDRequest, error) {
+	if err := validateDeviceIDSegment(segment); err != nil {
+		return DeviceIDRequest{}, err
+	}
+	if segment.Request.access == DeviceIDIndividual || !segment.MoreFollows {
+		return DeviceIDRequest{}, protocolError(
+			ErrorInvalidRequest,
+			FunctionEncapsulatedInterface,
+			0,
+			"continuation_unavailable",
+			-1,
+		)
+	}
+	return DeviceIDRequest{
+		access:       segment.Request.access,
+		objectID:     segment.NextObjectID,
+		continuation: true,
+	}, nil
 }
 
 // Access returns the validated access code.
@@ -359,10 +390,11 @@ func AggregateDeviceID(
 					-1,
 				)
 			}
-			expectedRequest = DeviceIDRequest{
-				access:   firstRequest.access,
-				objectID: segment.NextObjectID,
+			nextRequest, err := NextDeviceIDRequest(segment)
+			if err != nil {
+				return DeviceIDResult{}, err
 			}
+			expectedRequest = nextRequest
 		} else if !last {
 			return DeviceIDResult{}, malformedDeviceID(
 				expectedRequest,
@@ -409,9 +441,12 @@ func validateDeviceIDLimits(limits DeviceIDLimits) error {
 
 func validateDeviceIDSegment(segment DeviceIDSegment) error {
 	request := segment.Request
-	if !validDeviceIDAccess(request.access) ||
+	if validateDeviceIDRequest(request) != nil ||
 		!validDeviceIDConformity(segment.Conformity) {
 		return malformedDeviceID(request, 0, "segment_identity", -1)
+	}
+	if len(segment.Objects) > 0xff {
+		return malformedDeviceID(request, 0, "number_of_objects", 6)
 	}
 	if (!segment.MoreFollows && segment.NextObjectID != 0) ||
 		(segment.MoreFollows && segment.NextObjectID == 0) ||
@@ -428,7 +463,15 @@ func validateDeviceIDSegment(segment DeviceIDSegment) error {
 		}
 	}
 	var previous byte
+	encodedSize := 7
 	for index, object := range segment.Objects {
+		if len(object.Value) > maxDeviceIDObjectValueBytes {
+			return malformedDeviceID(request, 0, "object_value_length", -1)
+		}
+		encodedSize += 2 + len(object.Value)
+		if encodedSize > MaxPDUSize {
+			return malformedDeviceID(request, 0, "segment_pdu_length", -1)
+		}
 		if index > 0 && object.ID <= previous {
 			return malformedDeviceID(request, 0, "object_order", -1)
 		}
@@ -491,6 +534,28 @@ func validateDeviceIDRequest(request DeviceIDRequest) error {
 			0,
 			"read_device_id_code",
 			2,
+		)
+	}
+	if request.access == DeviceIDIndividual {
+		if request.continuation {
+			return protocolError(
+				ErrorInvalidRequest,
+				FunctionEncapsulatedInterface,
+				0,
+				"individual_continuation",
+				-1,
+			)
+		}
+		return nil
+	}
+	if (!request.continuation && request.objectID != 0) ||
+		(request.continuation && request.objectID == 0) {
+		return protocolError(
+			ErrorInvalidRequest,
+			FunctionEncapsulatedInterface,
+			0,
+			"stream_cursor",
+			3,
 		)
 	}
 	return nil

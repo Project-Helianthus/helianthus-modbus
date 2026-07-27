@@ -8,7 +8,7 @@
     "pdu.go"
   ],
   "allowed_product_go_sha256": {
-    "device_id.go": "9931fcb0f0cd0c79f6088fe41e58b63ecdd5c4f0158ee1959ba66117f0447975",
+    "device_id.go": "7931407186b0381d505a35ffadb8855a059a3acd68caf0589ccffc1aefb69db2",
     "doc.go": "1c61f67ded68b6eba4d6af2fdfe3e840628529af9ebbe2457de3962f8b2f093d",
     "pdu.go": "31729f695a879213cff35b47d993d8d6172a7ebe2c2cf1f282f2c1ffff34a80c"
   },

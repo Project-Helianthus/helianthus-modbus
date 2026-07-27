@@ -19,7 +19,7 @@ EXPECTED_POLICY = {
     "allowed_product_go_files": ["device_id.go", "doc.go", "pdu.go"],
     "allowed_product_go_sha256": {
         "device_id.go": (
-            "9931fcb0f0cd0c79f6088fe41e58b63ecdd5c4f0158ee1959ba66117f0447975"
+            "7931407186b0381d505a35ffadb8855a059a3acd68caf0589ccffc1aefb69db2"
         ),
         "doc.go": (
             "1c61f67ded68b6eba4d6af2fdfe3e840628529af9ebbe2457de3962f8b2f093d"

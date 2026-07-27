@@ -12,8 +12,8 @@ func TestDeviceIDRequestEncoding(t *testing.T) {
 		want     []byte
 	}{
 		{DeviceIDBasic, 0x00, []byte{0x2b, 0x0e, 0x01, 0x00}},
-		{DeviceIDRegular, 0x03, []byte{0x2b, 0x0e, 0x02, 0x03}},
-		{DeviceIDExtended, 0x80, []byte{0x2b, 0x0e, 0x03, 0x80}},
+		{DeviceIDRegular, 0x00, []byte{0x2b, 0x0e, 0x02, 0x00}},
+		{DeviceIDExtended, 0x00, []byte{0x2b, 0x0e, 0x03, 0x00}},
 		{DeviceIDIndividual, 0x05, []byte{0x2b, 0x0e, 0x04, 0x05}},
 	}
 	for _, test := range tests {
@@ -49,6 +49,53 @@ func TestDeviceIDRequestRejectsUnknownAccess(t *testing.T) {
 	_, err := NewDeviceIDRequest(DeviceIDAccess(0x00), 0)
 	_ = requireProtocolError(t, err, ErrorInvalidRequest)
 	_, err = NewDeviceIDRequest(DeviceIDAccess(0x05), 0)
+	_ = requireProtocolError(t, err, ErrorInvalidRequest)
+}
+
+func TestDeviceIDStreamInitialRequestRejectsNonzeroCursor(t *testing.T) {
+	for _, access := range []DeviceIDAccess{
+		DeviceIDBasic,
+		DeviceIDRegular,
+		DeviceIDExtended,
+	} {
+		_, err := NewDeviceIDRequest(access, 1)
+		_ = requireProtocolError(t, err, ErrorInvalidRequest)
+	}
+}
+
+func TestNextDeviceIDRequestBindsPriorSegment(t *testing.T) {
+	first, err := NewDeviceIDRequest(DeviceIDRegular, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	segment := DeviceIDSegment{
+		Request:      first,
+		Conformity:   0x82,
+		MoreFollows:  true,
+		NextObjectID: 3,
+		Objects: []DeviceIDObject{
+			{ID: 0, Value: []byte{0}},
+			{ID: 1, Value: []byte{1}},
+			{ID: 2, Value: []byte{2}},
+		},
+	}
+	next, err := NextDeviceIDRequest(segment)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.Access() != DeviceIDRegular || next.ObjectID() != 3 {
+		t.Fatalf("unexpected continuation request: %#v", next)
+	}
+	pdu, err := next.EncodePDU()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(pdu, []byte{0x2b, 0x0e, 0x02, 0x03}) {
+		t.Fatalf("continuation PDU = %x", pdu)
+	}
+	segment.MoreFollows = false
+	segment.NextObjectID = 0
+	_, err = NextDeviceIDRequest(segment)
 	_ = requireProtocolError(t, err, ErrorInvalidRequest)
 }
 
@@ -196,18 +243,22 @@ func TestDecodeDeviceIDException(t *testing.T) {
 
 func TestAggregateDeviceIDSegments(t *testing.T) {
 	first, _ := NewDeviceIDRequest(DeviceIDRegular, 0)
-	second, _ := NewDeviceIDRequest(DeviceIDRegular, 2)
-	segments := []DeviceIDSegment{
-		{
-			Request:      first,
-			Conformity:   0x82,
-			MoreFollows:  true,
-			NextObjectID: 2,
-			Objects: []DeviceIDObject{
-				{ID: 0, Value: []byte{0}},
-				{ID: 1, Value: []byte{1}},
-			},
+	base := DeviceIDSegment{
+		Request:      first,
+		Conformity:   0x82,
+		MoreFollows:  true,
+		NextObjectID: 2,
+		Objects: []DeviceIDObject{
+			{ID: 0, Value: []byte{0}},
+			{ID: 1, Value: []byte{1}},
 		},
+	}
+	second, err := NextDeviceIDRequest(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	segments := []DeviceIDSegment{
+		base,
 		{
 			Request:    second,
 			Conformity: 0x82,
@@ -235,7 +286,6 @@ func TestAggregateDeviceIDSegments(t *testing.T) {
 
 func TestAggregateDeviceIDRejectsPartialOrNonProgressingTraversal(t *testing.T) {
 	first, _ := NewDeviceIDRequest(DeviceIDBasic, 0)
-	cursorTwo, _ := NewDeviceIDRequest(DeviceIDBasic, 2)
 	base := DeviceIDSegment{
 		Request:      first,
 		Conformity:   0x01,
@@ -245,6 +295,10 @@ func TestAggregateDeviceIDRejectsPartialOrNonProgressingTraversal(t *testing.T) 
 			{ID: 0, Value: []byte{0}},
 			{ID: 1, Value: []byte{1}},
 		},
+	}
+	cursorTwo, err := NextDeviceIDRequest(base)
+	if err != nil {
+		t.Fatal(err)
 	}
 	tests := []struct {
 		name     string
@@ -312,6 +366,54 @@ func TestAggregateDeviceIDRejectsPartialOrNonProgressingTraversal(t *testing.T) 
 			_ = requireProtocolError(t, err, ErrorMalformedResponse)
 			if len(result.Objects) != 0 || len(result.Segments) != 0 {
 				t.Fatalf("partial aggregate published on failure: %#v", result)
+			}
+		})
+	}
+}
+
+func TestAggregateDeviceIDRejectsImpossibleDirectSegmentSizes(t *testing.T) {
+	first, _ := NewDeviceIDRequest(DeviceIDBasic, 0)
+	tests := []struct {
+		name    string
+		objects []DeviceIDObject
+		field   string
+	}{
+		{
+			name: "object exceeds wire maximum",
+			objects: []DeviceIDObject{
+				{ID: 0, Value: make([]byte, 245)},
+				{ID: 1, Value: []byte{1}},
+				{ID: 2, Value: []byte{2}},
+			},
+			field: "object_value_length",
+		},
+		{
+			name: "reconstructed PDU exceeds maximum",
+			objects: []DeviceIDObject{
+				{ID: 0, Value: make([]byte, 81)},
+				{ID: 1, Value: make([]byte, 81)},
+				{ID: 2, Value: make([]byte, 81)},
+			},
+			field: "segment_pdu_length",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result, err := AggregateDeviceID(
+				first,
+				[]DeviceIDSegment{{
+					Request:    first,
+					Conformity: 0x01,
+					Objects:    test.objects,
+				}},
+				DefaultDeviceIDLimits(),
+			)
+			protocolErr := requireProtocolError(t, err, ErrorMalformedResponse)
+			if protocolErr.Field != test.field {
+				t.Fatalf("field = %q, want %q", protocolErr.Field, test.field)
+			}
+			if len(result.Objects) != 0 || len(result.Segments) != 0 {
+				t.Fatalf("partial aggregate published: %#v", result)
 			}
 		})
 	}

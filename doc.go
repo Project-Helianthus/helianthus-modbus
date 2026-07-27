@@ -1,6 +1,6 @@
 // Package modbus is the public Modbus protocol and runtime foundation for
 // Helianthus.
 //
-// The package currently contains bootstrap documentation only. Protocol and
-// transport APIs are introduced by separately authorized, test-first issues.
+// The package exposes strict vendor-neutral phase-one PDU codecs. Transport
+// runtimes are introduced by later separately authorized, test-first issues.
 package modbus

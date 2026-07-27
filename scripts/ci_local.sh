@@ -17,6 +17,9 @@ echo "==> scope gate"
 echo "==> scope policy mutation tests"
 python3 -m unittest discover -s tests -p 'test_*.py'
 
+echo "==> Modbus companion consumer lock"
+./scripts/validate_companion_lock.sh
+
 echo "==> gofmt"
 go_files="$(git ls-files '*.go')"
 if [[ -n "$go_files" ]]; then

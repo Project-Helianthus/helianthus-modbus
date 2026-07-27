@@ -15,10 +15,18 @@ from typing import Iterable
 EXPECTED_POLICY = {
     "schema": "helianthus-modbus-boundary/v1",
     "mode": "read_only",
-    "implementation_lock": "bootstrap_only",
-    "allowed_product_go_files": ["doc.go"],
+    "implementation_lock": "m1_protocol",
+    "allowed_product_go_files": ["device_id.go", "doc.go", "pdu.go"],
     "allowed_product_go_sha256": {
-        "doc.go": "a36e258cf12fd6009f6adb3fa9a27f650c8598eb9fc52087def24f1ade970c02"
+        "device_id.go": (
+            "5bcad6b6af8ba827ee16ea832c7d688e0d851b9dabb42376fefb2a4837bd0d9f"
+        ),
+        "doc.go": (
+            "1c61f67ded68b6eba4d6af2fdfe3e840628529af9ebbe2457de3962f8b2f093d"
+        ),
+        "pdu.go": (
+            "6e10a628f3f79d5c19c7c51307308179644364a5ba2c698e39e4ec49ef4e1d8b"
+        ),
     },
     "allowed_operations": [
         {"function_code": 3, "name": "read_holding_registers"},
@@ -70,7 +78,11 @@ def validate_imports(imports: Iterable[str], policy: dict[str, object]) -> None:
     allowed = tuple(str(item) for item in policy["allowed_project_import_prefixes"])
     project_prefix = "github.com/Project-Helianthus/"
     for import_path in imports:
-        if import_path.startswith(project_prefix) and not import_path.startswith(allowed):
+        permitted = any(
+            import_path == prefix or import_path.startswith(prefix + "/")
+            for prefix in allowed
+        )
+        if import_path.startswith(project_prefix) and not permitted:
             raise PolicyError(f"forbidden Helianthus dependency: {import_path}")
 
 
@@ -85,20 +97,20 @@ def validate_go_sources(root: Path, policy: dict[str, object]) -> None:
                 raise PolicyError(f"{path.relative_to(root)} contains forbidden token {token}")
 
 
-def validate_bootstrap_lock(root: Path, policy: dict[str, object]) -> None:
-    if policy["implementation_lock"] != "bootstrap_only":
-        raise PolicyError("implementation lock must remain bootstrap_only")
+def validate_product_lock(root: Path, policy: dict[str, object]) -> None:
+    if policy["implementation_lock"] != "m1_protocol":
+        raise PolicyError("implementation lock must remain m1_protocol")
     allowed = {str(item) for item in policy["allowed_product_go_files"]}
     actual = {
         path.relative_to(root).as_posix()
         for path in root.rglob("*.go")
-        if ".git" not in path.parts
+        if ".git" not in path.parts and not path.name.endswith("_test.go")
     }
     unexpected = actual - allowed
     missing = allowed - actual
     if unexpected or missing:
         raise PolicyError(
-            f"bootstrap Go-file lock mismatch: unexpected={sorted(unexpected)} "
+            f"product Go-file lock mismatch: unexpected={sorted(unexpected)} "
             f"missing={sorted(missing)}"
         )
     expected_hashes = {
@@ -106,11 +118,11 @@ def validate_bootstrap_lock(root: Path, policy: dict[str, object]) -> None:
         for path, digest in policy["allowed_product_go_sha256"].items()
     }
     if set(expected_hashes) != allowed:
-        raise PolicyError("bootstrap Go-file hash inventory differs from allowed files")
+        raise PolicyError("product Go-file hash inventory differs from allowed files")
     for relative, expected in expected_hashes.items():
         actual = hashlib.sha256((root / relative).read_bytes()).hexdigest()
         if actual != expected:
-            raise PolicyError(f"bootstrap Go-file content changed: {relative}")
+            raise PolicyError(f"product Go-file content changed: {relative}")
 
 
 def go_imports(root: Path) -> list[str]:
@@ -119,7 +131,11 @@ def go_imports(root: Path) -> list[str]:
             "go",
             "list",
             "-f",
-            '{{range .Imports}}{{.}}{{"\\n"}}{{end}}',
+            (
+                '{{range .Imports}}{{.}}{{"\\n"}}{{end}}'
+                '{{range .TestImports}}{{.}}{{"\\n"}}{{end}}'
+                '{{range .XTestImports}}{{.}}{{"\\n"}}{{end}}'
+            ),
             "./...",
         ],
         cwd=root,
@@ -135,7 +151,7 @@ def go_imports(root: Path) -> list[str]:
 
 def validate(root: Path) -> None:
     policy = load_policy(root)
-    validate_bootstrap_lock(root, policy)
+    validate_product_lock(root, policy)
     validate_imports(go_imports(root), policy)
     validate_go_sources(root, policy)
 

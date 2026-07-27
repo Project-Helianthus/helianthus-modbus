@@ -1,0 +1,10 @@
+{
+  "content_revision": 1,
+  "contract_id": "HELIANTHUS_MODBUS_FOUNDATION_PROFILE_V1",
+  "contract_version": 1,
+  "manifest_sha256": "c411e3e8a464e4b9d3a59d3f5a0c82b57e176e24dec9550b9bc0c8b3e4b28c70",
+  "merged_commit_sha": "711a556fee344c6fe7f1ecf3253fcdb3f5f22d06",
+  "repository": "Project-Helianthus/helianthus-docs-ebus",
+  "schema": "helianthus.modbus.companion-consumer-lock",
+  "schema_version": 1
+}

@@ -92,7 +92,7 @@ def validate_bootstrap_lock(root: Path, policy: dict[str, object]) -> None:
     actual = {
         path.relative_to(root).as_posix()
         for path in root.rglob("*.go")
-        if ".git" not in path.parts
+        if ".git" not in path.parts and not path.name.endswith("_test.go")
     }
     unexpected = actual - allowed
     missing = allowed - actual
@@ -119,7 +119,11 @@ def go_imports(root: Path) -> list[str]:
             "go",
             "list",
             "-f",
-            '{{range .Imports}}{{.}}{{"\\n"}}{{end}}',
+            (
+                '{{range .Imports}}{{.}}{{"\\n"}}{{end}}'
+                '{{range .TestImports}}{{.}}{{"\\n"}}{{end}}'
+                '{{range .XTestImports}}{{.}}{{"\\n"}}{{end}}'
+            ),
             "./...",
         ],
         cwd=root,

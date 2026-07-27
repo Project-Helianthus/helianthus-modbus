@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import importlib.util
 import json
 import tempfile
@@ -55,6 +56,20 @@ class ScopePolicyTests(unittest.TestCase):
             )
             with self.assertRaises(validator.PolicyError):
                 validator.validate_bootstrap_lock(root, validator.EXPECTED_POLICY)
+
+    def test_test_file_is_not_product_code_under_bootstrap_lock(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "doc.go").write_text("package modbus\n", encoding="utf-8")
+            (root / "pdu_test.go").write_text(
+                "package modbus\nfunc missingImplementation() {}\n",
+                encoding="utf-8",
+            )
+            policy = copy.deepcopy(validator.EXPECTED_POLICY)
+            policy["allowed_product_go_sha256"]["doc.go"] = (
+                hashlib.sha256((root / "doc.go").read_bytes()).hexdigest()
+            )
+            validator.validate_bootstrap_lock(root, policy)
 
     def test_raw_pdu_in_allowed_doc_file_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

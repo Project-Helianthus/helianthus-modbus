@@ -36,11 +36,37 @@ type DeviceIDObject struct {
 
 // DeviceIDSegment is one validated response segment with request provenance.
 type DeviceIDSegment struct {
-	Request      DeviceIDRequest
-	Conformity   DeviceIDConformity
-	MoreFollows  bool
-	NextObjectID byte
-	Objects      []DeviceIDObject
+	request      DeviceIDRequest
+	conformity   DeviceIDConformity
+	moreFollows  bool
+	nextObjectID byte
+	objects      []DeviceIDObject
+	decoded      bool
+}
+
+// Request returns the exact request identity associated with the segment.
+func (segment DeviceIDSegment) Request() DeviceIDRequest {
+	return segment.request
+}
+
+// Conformity returns the exact peer conformity byte.
+func (segment DeviceIDSegment) Conformity() DeviceIDConformity {
+	return segment.conformity
+}
+
+// MoreFollows reports whether the peer supplied a continuation cursor.
+func (segment DeviceIDSegment) MoreFollows() bool {
+	return segment.moreFollows
+}
+
+// NextObjectID returns the peer-supplied continuation cursor.
+func (segment DeviceIDSegment) NextObjectID() byte {
+	return segment.nextObjectID
+}
+
+// Objects returns a deep copy of the exact object bytes.
+func (segment DeviceIDSegment) Objects() []DeviceIDObject {
+	return cloneDeviceIDObjects(segment.objects)
 }
 
 // DeviceIDLimits bounds traversal work and aggregate allocation.
@@ -97,7 +123,7 @@ func NextDeviceIDRequest(segment DeviceIDSegment) (DeviceIDRequest, error) {
 	if err := validateDeviceIDSegment(segment); err != nil {
 		return DeviceIDRequest{}, err
 	}
-	if segment.Request.access == DeviceIDIndividual || !segment.MoreFollows {
+	if segment.request.access == DeviceIDIndividual || !segment.moreFollows {
 		return DeviceIDRequest{}, protocolError(
 			ErrorInvalidRequest,
 			FunctionEncapsulatedInterface,
@@ -107,8 +133,8 @@ func NextDeviceIDRequest(segment DeviceIDSegment) (DeviceIDRequest, error) {
 		)
 	}
 	return DeviceIDRequest{
-		access:       segment.Request.access,
-		objectID:     segment.NextObjectID,
+		access:       segment.request.access,
+		objectID:     segment.nextObjectID,
 		continuation: true,
 	}, nil
 }
@@ -275,11 +301,12 @@ func DecodeDeviceIDSegment(
 		)
 	}
 	segment := DeviceIDSegment{
-		Request:      request,
-		Conformity:   conformity,
-		MoreFollows:  moreFollows,
-		NextObjectID: nextObjectID,
-		Objects:      objects,
+		request:      request,
+		conformity:   conformity,
+		moreFollows:  moreFollows,
+		nextObjectID: nextObjectID,
+		objects:      objects,
+		decoded:      true,
 	}
 	if err := validateDeviceIDSegment(segment); err != nil {
 		return DeviceIDSegment{}, err
@@ -326,7 +353,7 @@ func AggregateDeviceID(
 	havePreviousObject := false
 
 	for index, segment := range segments {
-		if segment.Request != expectedRequest {
+		if segment.request != expectedRequest {
 			return DeviceIDResult{}, malformedDeviceID(
 				expectedRequest,
 				0,
@@ -338,8 +365,8 @@ func AggregateDeviceID(
 			return DeviceIDResult{}, err
 		}
 		if index == 0 {
-			conformity = segment.Conformity
-		} else if segment.Conformity != conformity {
+			conformity = segment.conformity
+		} else if segment.conformity != conformity {
 			return DeviceIDResult{}, malformedDeviceID(
 				expectedRequest,
 				0,
@@ -348,10 +375,10 @@ func AggregateDeviceID(
 			)
 		}
 		copiedSegment := segment
-		copiedSegment.Objects = cloneDeviceIDObjects(segment.Objects)
+		copiedSegment.objects = cloneDeviceIDObjects(segment.objects)
 		copiedSegments = append(copiedSegments, copiedSegment)
 
-		for _, object := range segment.Objects {
+		for _, object := range segment.objects {
 			if _, exists := seen[object.ID]; exists ||
 				(havePreviousObject && object.ID <= previousObjectID) {
 				return DeviceIDResult{}, malformedDeviceID(
@@ -381,7 +408,7 @@ func AggregateDeviceID(
 		}
 
 		last := index == len(segments)-1
-		if segment.MoreFollows {
+		if segment.moreFollows {
 			if last {
 				return DeviceIDResult{}, malformedDeviceID(
 					expectedRequest,
@@ -440,31 +467,32 @@ func validateDeviceIDLimits(limits DeviceIDLimits) error {
 }
 
 func validateDeviceIDSegment(segment DeviceIDSegment) error {
-	request := segment.Request
-	if validateDeviceIDRequest(request) != nil ||
-		!validDeviceIDConformity(segment.Conformity) {
+	request := segment.request
+	if !segment.decoded ||
+		validateDeviceIDRequest(request) != nil ||
+		!validDeviceIDConformity(segment.conformity) {
 		return malformedDeviceID(request, 0, "segment_identity", -1)
 	}
-	if len(segment.Objects) > 0xff {
+	if len(segment.objects) > 0xff {
 		return malformedDeviceID(request, 0, "number_of_objects", 6)
 	}
-	if (!segment.MoreFollows && segment.NextObjectID != 0) ||
-		(segment.MoreFollows && segment.NextObjectID == 0) ||
-		(segment.MoreFollows && len(segment.Objects) == 0) {
+	if (!segment.moreFollows && segment.nextObjectID != 0) ||
+		(segment.moreFollows && segment.nextObjectID == 0) ||
+		(segment.moreFollows && len(segment.objects) == 0) {
 		return malformedDeviceID(request, 0, "continuation", -1)
 	}
 	if request.access == DeviceIDIndividual {
-		if segment.Conformity&0x80 == 0 ||
-			segment.MoreFollows ||
-			segment.NextObjectID != 0 ||
-			len(segment.Objects) != 1 ||
-			segment.Objects[0].ID != request.objectID {
+		if segment.conformity&0x80 == 0 ||
+			segment.moreFollows ||
+			segment.nextObjectID != 0 ||
+			len(segment.objects) != 1 ||
+			segment.objects[0].ID != request.objectID {
 			return malformedDeviceID(request, 0, "individual_response", -1)
 		}
 	}
 	var previous byte
 	encodedSize := 7
-	for index, object := range segment.Objects {
+	for index, object := range segment.objects {
 		if len(object.Value) > maxDeviceIDObjectValueBytes {
 			return malformedDeviceID(request, 0, "object_value_length", -1)
 		}
@@ -483,15 +511,19 @@ func validateDeviceIDSegment(segment DeviceIDSegment) error {
 				!objectAllowedByAccess(object.ID, request.access)) {
 			return malformedDeviceID(request, 0, "requested_category", -1)
 		}
-		if !objectAllowedByConformity(object.ID, segment.Conformity) {
+		if !objectAllowedByConformity(object.ID, segment.conformity) {
 			return malformedDeviceID(request, 0, "conformity_category", -1)
 		}
 		previous = object.ID
 	}
-	if segment.MoreFollows &&
-		len(segment.Objects) > 0 &&
-		segment.NextObjectID <= segment.Objects[len(segment.Objects)-1].ID {
-		return malformedDeviceID(request, 0, "next_object_id", -1)
+	if segment.moreFollows {
+		lastObjectID := segment.objects[len(segment.objects)-1].ID
+		if segment.nextObjectID <= lastObjectID ||
+			segment.nextObjectID >= 0x07 && segment.nextObjectID < 0x80 ||
+			!objectAllowedByAccess(segment.nextObjectID, request.access) ||
+			!objectAllowedByConformity(segment.nextObjectID, segment.conformity) {
+			return malformedDeviceID(request, 0, "next_object_id", -1)
+		}
 	}
 	return nil
 }

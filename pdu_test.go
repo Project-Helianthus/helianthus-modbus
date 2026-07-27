@@ -18,26 +18,6 @@ func requireProtocolError(t *testing.T, err error, kind ErrorKind) *ProtocolErro
 	return protocolErr
 }
 
-func TestPhaseOneFunctionAllowlist(t *testing.T) {
-	tests := []struct {
-		function FunctionCode
-		allowed  bool
-	}{
-		{FunctionReadHoldingRegisters, true},
-		{FunctionReadInputRegisters, true},
-		{FunctionEncapsulatedInterface, true},
-		{FunctionCode(0x01), false},
-		{FunctionCode(0x06), false},
-		{FunctionCode(0x10), false},
-		{FunctionCode(0x2c), false},
-	}
-	for _, test := range tests {
-		if got := IsPhaseOneFunction(test.function); got != test.allowed {
-			t.Errorf("IsPhaseOneFunction(0x%02x) = %v, want %v", test.function, got, test.allowed)
-		}
-	}
-}
-
 func TestNewReadRegistersRequestAndEncoding(t *testing.T) {
 	tests := []struct {
 		name     string

@@ -77,18 +77,6 @@ func protocolError(
 	}
 }
 
-// IsPhaseOneFunction reports whether a function is in the read-only V1 set.
-func IsPhaseOneFunction(function FunctionCode) bool {
-	switch function {
-	case FunctionReadHoldingRegisters,
-		FunctionReadInputRegisters,
-		FunctionEncapsulatedInterface:
-		return true
-	default:
-		return false
-	}
-}
-
 // ReadRegistersRequest is a validated FC03 or FC04 request.
 type ReadRegistersRequest struct {
 	function FunctionCode

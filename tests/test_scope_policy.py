@@ -39,11 +39,25 @@ class ScopePolicyTests(unittest.TestCase):
                 validator.load_policy(root)
 
     def test_foreign_helianthus_dependency_is_rejected(self) -> None:
-        with self.assertRaises(validator.PolicyError):
-            validator.validate_imports(
-                ["github.com/Project-Helianthus/helianthus-ebusgateway/internal/x"],
-                validator.EXPECTED_POLICY,
-            )
+        for import_path in (
+            "github.com/Project-Helianthus/helianthus-ebusgateway/internal/x",
+            "github.com/Project-Helianthus/helianthus-modbusreg",
+        ):
+            with self.subTest(import_path=import_path):
+                with self.assertRaises(validator.PolicyError):
+                    validator.validate_imports(
+                        [import_path],
+                        validator.EXPECTED_POLICY,
+                    )
+
+    def test_own_module_and_subpackage_imports_are_accepted(self) -> None:
+        validator.validate_imports(
+            [
+                "github.com/Project-Helianthus/helianthus-modbus",
+                "github.com/Project-Helianthus/helianthus-modbus/internal/x",
+            ],
+            validator.EXPECTED_POLICY,
+        )
 
     def materialize_product_lock(
         self,

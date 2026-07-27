@@ -19,13 +19,13 @@ EXPECTED_POLICY = {
     "allowed_product_go_files": ["device_id.go", "doc.go", "pdu.go"],
     "allowed_product_go_sha256": {
         "device_id.go": (
-            "7931407186b0381d505a35ffadb8855a059a3acd68caf0589ccffc1aefb69db2"
+            "5bcad6b6af8ba827ee16ea832c7d688e0d851b9dabb42376fefb2a4837bd0d9f"
         ),
         "doc.go": (
             "1c61f67ded68b6eba4d6af2fdfe3e840628529af9ebbe2457de3962f8b2f093d"
         ),
         "pdu.go": (
-            "31729f695a879213cff35b47d993d8d6172a7ebe2c2cf1f282f2c1ffff34a80c"
+            "6e10a628f3f79d5c19c7c51307308179644364a5ba2c698e39e4ec49ef4e1d8b"
         ),
     },
     "allowed_operations": [
@@ -78,7 +78,11 @@ def validate_imports(imports: Iterable[str], policy: dict[str, object]) -> None:
     allowed = tuple(str(item) for item in policy["allowed_project_import_prefixes"])
     project_prefix = "github.com/Project-Helianthus/"
     for import_path in imports:
-        if import_path.startswith(project_prefix) and not import_path.startswith(allowed):
+        permitted = any(
+            import_path == prefix or import_path.startswith(prefix + "/")
+            for prefix in allowed
+        )
+        if import_path.startswith(project_prefix) and not permitted:
             raise PolicyError(f"forbidden Helianthus dependency: {import_path}")
 
 

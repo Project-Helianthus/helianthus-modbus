@@ -64,14 +64,29 @@ func TestNewReadRegistersRequestAndEncoding(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if request.Table != test.table {
-				t.Fatalf("table = %q, want %q", request.Table, test.table)
+			if request.Table() != test.table {
+				t.Fatalf("table = %q, want %q", request.Table(), test.table)
 			}
-			if got := request.EncodePDU(); !reflect.DeepEqual(got, test.wantPDU) {
+			got, err := request.EncodePDU()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(got, test.wantPDU) {
 				t.Fatalf("PDU = %x, want %x", got, test.wantPDU)
 			}
 		})
 	}
+}
+
+func TestZeroReadRegistersRequestCannotEncodeOrDecode(t *testing.T) {
+	var request ReadRegistersRequest
+	pdu, err := request.EncodePDU()
+	_ = requireProtocolError(t, err, ErrorUnsupportedOperation)
+	if pdu != nil {
+		t.Fatalf("invalid request encoded bytes: %x", pdu)
+	}
+	_, err = DecodeReadRegistersResponse(request, []byte{0x03, 0x02, 0, 1})
+	_ = requireProtocolError(t, err, ErrorUnsupportedOperation)
 }
 
 func TestReadRegistersRequestBounds(t *testing.T) {
@@ -90,7 +105,7 @@ func TestReadRegistersRequestBounds(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			_, err := NewReadRegistersRequest(test.function, test.offset, test.quantity)
-			requireProtocolError(t, err, test.kind)
+			_ = requireProtocolError(t, err, test.kind)
 		})
 	}
 }
@@ -161,7 +176,7 @@ func TestDecodeReadRegistersResponseRejectsMalformedShape(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			_, err := DecodeReadRegistersResponse(request, test.pdu)
-			requireProtocolError(t, err, ErrorMalformedResponse)
+			_ = requireProtocolError(t, err, ErrorMalformedResponse)
 		})
 	}
 }
@@ -191,6 +206,6 @@ func TestExceptionResponseMustBeExactlyTwoBytes(t *testing.T) {
 	}
 	for _, pdu := range [][]byte{{0x83}, {0x83, 0x02, 0x00}} {
 		_, err := DecodeReadRegistersResponse(request, pdu)
-		requireProtocolError(t, err, ErrorMalformedResponse)
+		_ = requireProtocolError(t, err, ErrorMalformedResponse)
 	}
 }

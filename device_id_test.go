@@ -21,17 +21,35 @@ func TestDeviceIDRequestEncoding(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := request.EncodePDU(); !reflect.DeepEqual(got, test.want) {
+		got, err := request.EncodePDU()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(got, test.want) {
 			t.Errorf("PDU = %x, want %x", got, test.want)
 		}
 	}
 }
 
+func TestZeroDeviceIDRequestCannotEncodeOrDecode(t *testing.T) {
+	var request DeviceIDRequest
+	pdu, err := request.EncodePDU()
+	_ = requireProtocolError(t, err, ErrorInvalidRequest)
+	if pdu != nil {
+		t.Fatalf("invalid request encoded bytes: %x", pdu)
+	}
+	_, err = DecodeDeviceIDSegment(
+		request,
+		[]byte{0x2b, 0x0e, 0x01, 0x01, 0, 0, 0},
+	)
+	_ = requireProtocolError(t, err, ErrorInvalidRequest)
+}
+
 func TestDeviceIDRequestRejectsUnknownAccess(t *testing.T) {
 	_, err := NewDeviceIDRequest(DeviceIDAccess(0x00), 0)
-	requireProtocolError(t, err, ErrorInvalidRequest)
+	_ = requireProtocolError(t, err, ErrorInvalidRequest)
 	_, err = NewDeviceIDRequest(DeviceIDAccess(0x05), 0)
-	requireProtocolError(t, err, ErrorInvalidRequest)
+	_ = requireProtocolError(t, err, ErrorInvalidRequest)
 }
 
 func TestDecodeDeviceIDSegmentPreservesExactObjectBytes(t *testing.T) {
@@ -95,7 +113,7 @@ func TestDecodeDeviceIDSegmentRejectsMalformedHeader(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			_, err := DecodeDeviceIDSegment(request, test.pdu)
-			requireProtocolError(t, err, ErrorMalformedResponse)
+			_ = requireProtocolError(t, err, ErrorMalformedResponse)
 		})
 	}
 }
@@ -119,7 +137,7 @@ func TestDecodeDeviceIDSegmentRejectsMalformedObjects(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			_, err := DecodeDeviceIDSegment(request, test.pdu)
-			requireProtocolError(t, err, ErrorMalformedResponse)
+			_ = requireProtocolError(t, err, ErrorMalformedResponse)
 		})
 	}
 }
@@ -133,7 +151,7 @@ func TestDecodeDeviceIDSegmentEnforcesRequestedCategory(t *testing.T) {
 		basic,
 		[]byte{0x2b, 0x0e, 0x01, 0x03, 0, 0, 1, 3, 1, 1},
 	)
-	requireProtocolError(t, err, ErrorMalformedResponse)
+	_ = requireProtocolError(t, err, ErrorMalformedResponse)
 }
 
 func TestDecodeIndividualDeviceIDRules(t *testing.T) {
@@ -155,7 +173,7 @@ func TestDecodeIndividualDeviceIDRules(t *testing.T) {
 	for index, pdu := range tests {
 		t.Run(string(rune('a'+index)), func(t *testing.T) {
 			_, err := DecodeDeviceIDSegment(request, pdu)
-			requireProtocolError(t, err, ErrorMalformedResponse)
+			_ = requireProtocolError(t, err, ErrorMalformedResponse)
 		})
 	}
 }
@@ -172,7 +190,7 @@ func TestDecodeDeviceIDException(t *testing.T) {
 	}
 	for _, pdu := range [][]byte{{0xab}, {0xab, 2, 0}} {
 		_, err := DecodeDeviceIDSegment(request, pdu)
-		requireProtocolError(t, err, ErrorMalformedResponse)
+		_ = requireProtocolError(t, err, ErrorMalformedResponse)
 	}
 }
 
@@ -291,7 +309,7 @@ func TestAggregateDeviceIDRejectsPartialOrNonProgressingTraversal(t *testing.T) 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			result, err := AggregateDeviceID(first, test.segments, test.limits)
-			requireProtocolError(t, err, ErrorMalformedResponse)
+			_ = requireProtocolError(t, err, ErrorMalformedResponse)
 			if len(result.Objects) != 0 || len(result.Segments) != 0 {
 				t.Fatalf("partial aggregate published on failure: %#v", result)
 			}
@@ -317,6 +335,6 @@ func TestDeviceIDLimitsMustBePositiveAndBounded(t *testing.T) {
 		{MaxSegments: 256, MaxObjects: 256, MaxValueBytes: 62465},
 	} {
 		_, err := AggregateDeviceID(first, segments, limits)
-		requireProtocolError(t, err, ErrorInvalidRequest)
+		_ = requireProtocolError(t, err, ErrorInvalidRequest)
 	}
 }

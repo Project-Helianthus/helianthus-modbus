@@ -15,10 +15,18 @@ from typing import Iterable
 EXPECTED_POLICY = {
     "schema": "helianthus-modbus-boundary/v1",
     "mode": "read_only",
-    "implementation_lock": "bootstrap_only",
-    "allowed_product_go_files": ["doc.go"],
+    "implementation_lock": "m1_protocol",
+    "allowed_product_go_files": ["device_id.go", "doc.go", "pdu.go"],
     "allowed_product_go_sha256": {
-        "doc.go": "a36e258cf12fd6009f6adb3fa9a27f650c8598eb9fc52087def24f1ade970c02"
+        "device_id.go": (
+            "9931fcb0f0cd0c79f6088fe41e58b63ecdd5c4f0158ee1959ba66117f0447975"
+        ),
+        "doc.go": (
+            "1c61f67ded68b6eba4d6af2fdfe3e840628529af9ebbe2457de3962f8b2f093d"
+        ),
+        "pdu.go": (
+            "31729f695a879213cff35b47d993d8d6172a7ebe2c2cf1f282f2c1ffff34a80c"
+        ),
     },
     "allowed_operations": [
         {"function_code": 3, "name": "read_holding_registers"},
@@ -85,9 +93,9 @@ def validate_go_sources(root: Path, policy: dict[str, object]) -> None:
                 raise PolicyError(f"{path.relative_to(root)} contains forbidden token {token}")
 
 
-def validate_bootstrap_lock(root: Path, policy: dict[str, object]) -> None:
-    if policy["implementation_lock"] != "bootstrap_only":
-        raise PolicyError("implementation lock must remain bootstrap_only")
+def validate_product_lock(root: Path, policy: dict[str, object]) -> None:
+    if policy["implementation_lock"] != "m1_protocol":
+        raise PolicyError("implementation lock must remain m1_protocol")
     allowed = {str(item) for item in policy["allowed_product_go_files"]}
     actual = {
         path.relative_to(root).as_posix()
@@ -98,7 +106,7 @@ def validate_bootstrap_lock(root: Path, policy: dict[str, object]) -> None:
     missing = allowed - actual
     if unexpected or missing:
         raise PolicyError(
-            f"bootstrap Go-file lock mismatch: unexpected={sorted(unexpected)} "
+            f"product Go-file lock mismatch: unexpected={sorted(unexpected)} "
             f"missing={sorted(missing)}"
         )
     expected_hashes = {
@@ -106,11 +114,11 @@ def validate_bootstrap_lock(root: Path, policy: dict[str, object]) -> None:
         for path, digest in policy["allowed_product_go_sha256"].items()
     }
     if set(expected_hashes) != allowed:
-        raise PolicyError("bootstrap Go-file hash inventory differs from allowed files")
+        raise PolicyError("product Go-file hash inventory differs from allowed files")
     for relative, expected in expected_hashes.items():
         actual = hashlib.sha256((root / relative).read_bytes()).hexdigest()
         if actual != expected:
-            raise PolicyError(f"bootstrap Go-file content changed: {relative}")
+            raise PolicyError(f"product Go-file content changed: {relative}")
 
 
 def go_imports(root: Path) -> list[str]:
@@ -139,7 +147,7 @@ def go_imports(root: Path) -> list[str]:
 
 def validate(root: Path) -> None:
     policy = load_policy(root)
-    validate_bootstrap_lock(root, policy)
+    validate_product_lock(root, policy)
     validate_imports(go_imports(root), policy)
     validate_go_sources(root, policy)
 

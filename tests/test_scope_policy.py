@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import copy
-import hashlib
 import importlib.util
 import json
 import tempfile
@@ -46,40 +45,47 @@ class ScopePolicyTests(unittest.TestCase):
                 validator.EXPECTED_POLICY,
             )
 
-    def test_token_free_generic_pdu_file_is_rejected_by_bootstrap_lock(self) -> None:
+    def materialize_product_lock(
+        self,
+        root: Path,
+    ) -> dict[str, object]:
+        policy = copy.deepcopy(validator.EXPECTED_POLICY)
+        for relative in policy["allowed_product_go_files"]:
+            target = root / relative
+            target.write_bytes((SCRIPT.parents[1] / relative).read_bytes())
+        return policy
+
+    def test_unlisted_product_file_is_rejected_by_product_lock(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            (root / "doc.go").write_text("package modbus\n", encoding="utf-8")
-            (root / "pdu.go").write_text(
+            policy = self.materialize_product_lock(root)
+            (root / "extra.go").write_text(
                 "package modbus\nfunc request(code byte) []byte { return []byte{code} }\n",
                 encoding="utf-8",
             )
             with self.assertRaises(validator.PolicyError):
-                validator.validate_bootstrap_lock(root, validator.EXPECTED_POLICY)
+                validator.validate_product_lock(root, policy)
 
-    def test_test_file_is_not_product_code_under_bootstrap_lock(self) -> None:
+    def test_test_file_is_not_product_code_under_product_lock(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            (root / "doc.go").write_text("package modbus\n", encoding="utf-8")
+            policy = self.materialize_product_lock(root)
             (root / "pdu_test.go").write_text(
                 "package modbus\nfunc missingImplementation() {}\n",
                 encoding="utf-8",
             )
-            policy = copy.deepcopy(validator.EXPECTED_POLICY)
-            policy["allowed_product_go_sha256"]["doc.go"] = (
-                hashlib.sha256((root / "doc.go").read_bytes()).hexdigest()
-            )
-            validator.validate_bootstrap_lock(root, policy)
+            validator.validate_product_lock(root, policy)
 
     def test_raw_pdu_in_allowed_doc_file_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
+            policy = self.materialize_product_lock(root)
             (root / "doc.go").write_text(
                 "package modbus\nfunc request(code byte) []byte { return []byte{code} }\n",
                 encoding="utf-8",
             )
             with self.assertRaises(validator.PolicyError):
-                validator.validate_bootstrap_lock(root, validator.EXPECTED_POLICY)
+                validator.validate_product_lock(root, policy)
 
     def test_vendor_semantics_in_go_source_are_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

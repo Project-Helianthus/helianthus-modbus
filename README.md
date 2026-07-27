@@ -5,9 +5,10 @@ foundation for Helianthus.
 
 ## Status
 
-The repository is bootstrapped but contains no protocol or runtime
-implementation yet. APIs and behavior arrive through separately authorized,
-test-first issues after their public companion contract is merged.
+The repository implements the strict vendor-neutral phase-one PDU layer:
+validated FC03 and FC04 register reads, typed exception responses, and bounded
+FC2B/MEI0E Device Identification segments and aggregation. TCP and RTU runtime
+ownership remain separately authorized follow-up work.
 
 ## Ownership
 
@@ -33,15 +34,16 @@ milestone.
 
 ## Phase-One Boundary
 
-Phase one is read-only. Its complete planned operation allowlist is:
+Phase one is read-only. Its complete implemented PDU operation allowlist is:
 
 - FC03, Read Holding Registers;
 - FC04, Read Input Registers;
 - FC2B/MEI type 0x0E, Read Device Identification.
 
-This list is a scope boundary, not an implementation claim. There is no generic
-function-code escape hatch and no write PDU, probe, or control API. Write
-support requires a separate safety plan and authorization.
+This list is both the implemented PDU boundary and the ceiling for later
+phase-one transports. There is no generic function-code escape hatch and no
+write PDU, probe, or control API. Write support requires a separate safety plan
+and authorization.
 
 The normative cross-repository boundary is
 [`modbus-multivendor-boundaries.md`](https://github.com/Project-Helianthus/helianthus-docs-ebus/blob/main/docs/platform/modbus-multivendor-boundaries.md).
@@ -62,10 +64,12 @@ Run the complete local gate:
 The gate validates the exact machine-readable
 [`policy/phase1-readonly.json`](policy/phase1-readonly.json), rejects
 unauthorized Helianthus dependencies and vendor/write surface tokens, and runs
-mutation tests for those boundaries. The bootstrap policy also permits only
-`doc.go`; any PDU, transport, test, or other Go implementation file fails CI.
-The authorized M1 implementation must replace this lock explicitly through its
-test-first issue and merged M1 companion contract.
+mutation tests for those boundaries. The product source inventory is closed by
+the `m1_protocol` policy lock. Tests may expand without weakening that product
+inventory, but still pass the same dependency, vendor-token, and read-only
+gates. CI also validates
+[`modbus-companion-consumer-lock-v1.json`](policy/modbus-companion-consumer-lock-v1.json)
+against the exact merged public companion before compiling product code.
 
 The repository follows one issue and one pull request at a time, squash merge,
 strict test-first implementation, and applicable documentation/protocol gates.

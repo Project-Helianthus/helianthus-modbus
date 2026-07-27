@@ -1,12 +1,16 @@
 {
   "schema": "helianthus-modbus-boundary/v1",
   "mode": "read_only",
-  "implementation_lock": "bootstrap_only",
+  "implementation_lock": "m1_protocol",
   "allowed_product_go_files": [
-    "doc.go"
+    "device_id.go",
+    "doc.go",
+    "pdu.go"
   ],
   "allowed_product_go_sha256": {
-    "doc.go": "a36e258cf12fd6009f6adb3fa9a27f650c8598eb9fc52087def24f1ade970c02"
+    "device_id.go": "9931fcb0f0cd0c79f6088fe41e58b63ecdd5c4f0158ee1959ba66117f0447975",
+    "doc.go": "1c61f67ded68b6eba4d6af2fdfe3e840628529af9ebbe2457de3962f8b2f093d",
+    "pdu.go": "31729f695a879213cff35b47d993d8d6172a7ebe2c2cf1f282f2c1ffff34a80c"
   },
   "allowed_operations": [
     {

@@ -71,6 +71,22 @@ func rtuTestPlan(t *testing.T) RTUReadPlan {
 	}
 }
 
+func rtuDeviceIDTestPlan(t *testing.T) RTUDeviceIDPlan {
+	t.Helper()
+	request, err := NewDeviceIDRequest(DeviceIDIndividual, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return RTUDeviceIDPlan{
+		UnitID:             1,
+		AuthorizationScope: "scope-device-id",
+		PollGeneration:     8,
+		DeadlineIdentity:   10,
+		Timeout:            50 * time.Millisecond,
+		Request:            request,
+	}
+}
+
 func beginRTUTestRead(
 	t *testing.T,
 	endpoint *RTUFixtureEndpoint,
@@ -101,6 +117,102 @@ func observeRTUTestFrame(
 	}
 	clock.Advance(endpoint.timing.InterFrame())
 	return endpoint.EndFrame()
+}
+
+func observeRTUDeviceIDFrame(
+	endpoint *RTUFixtureEndpoint,
+	clock *virtualTCPClock,
+	frame []byte,
+) (RTUDeviceIDResult, error) {
+	for index, value := range frame {
+		if index != 0 {
+			clock.Advance(endpoint.timing.CharacterTime())
+		}
+		if err := endpoint.FeedByte(value); err != nil {
+			return RTUDeviceIDResult{}, err
+		}
+	}
+	clock.Advance(endpoint.timing.InterFrame())
+	return endpoint.EndDeviceIDFrame()
+}
+
+func TestRTUDeviceIDEndpointDeliversSegmentWithWireProvenance(t *testing.T) {
+	endpoint, clock, _ := newRTUTestEndpoint(t)
+	plan := rtuDeviceIDTestPlan(t)
+	handle, requestFrame, err := endpoint.BeginDeviceID(
+		context.Background(),
+		plan,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantRequest := rtuTestFrame(1, 0x2b, 0x0e, 0x04, 0x05)
+	if !bytes.Equal(requestFrame, wantRequest) {
+		t.Fatalf("request frame = %x, want %x", requestFrame, wantRequest)
+	}
+	if err := endpoint.CompleteTransmit(handle, TransmitComplete); err != nil {
+		t.Fatal(err)
+	}
+	frame := rtuTestFrame(
+		1,
+		0x2b, 0x0e, 0x04, 0x83, 0x00, 0x00, 0x01,
+		0x05, 0x01, 'x',
+	)
+	result, err := observeRTUDeviceIDFrame(endpoint, clock, frame)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Deliverable() {
+		t.Fatal("valid Device ID segment was not deliverable")
+	}
+	segment := result.Segment()
+	if len(segment.Objects()) != 1 ||
+		segment.Objects()[0].ID != 5 ||
+		!bytes.Equal(segment.Objects()[0].Value, []byte{'x'}) {
+		t.Fatalf("segment = %#v", segment)
+	}
+	wire := result.WireResponse()
+	provenance := wire.Provenance()
+	if wire.PhysicalRequestID() != handle.RequestID() ||
+		provenance.Transport != TransportRTU ||
+		provenance.RequestedFunction != FunctionEncapsulatedInterface ||
+		provenance.ReceivedFunction != FunctionEncapsulatedInterface ||
+		provenance.DeviceIDAccess != DeviceIDIndividual ||
+		provenance.DeviceIDObjectID != 5 {
+		t.Fatalf("wire/provenance = %#v / %#v", wire, provenance)
+	}
+	if !bytes.Equal(wire.Bytes(), frame) {
+		t.Fatalf("wire bytes = %x, want %x", wire.Bytes(), frame)
+	}
+}
+
+func TestRTUDeviceIDMalformedCandidateTerminalizesWithWireIdentity(
+	t *testing.T,
+) {
+	endpoint, clock, _ := newRTUTestEndpoint(t)
+	plan := rtuDeviceIDTestPlan(t)
+	handle, _, err := endpoint.BeginDeviceID(context.Background(), plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := endpoint.CompleteTransmit(handle, TransmitComplete); err != nil {
+		t.Fatal(err)
+	}
+	frame := rtuTestFrame(
+		1,
+		0x2b, 0x0d, 0x04, 0x83, 0x00, 0x00, 0x01,
+		0x05, 0x01, 'x',
+	)
+	result, err := observeRTUDeviceIDFrame(endpoint, clock, frame)
+	_ = requireProtocolError(t, err, ErrorMalformedResponse)
+	wire := result.WireResponse()
+	if result.Deliverable() ||
+		wire.Outcome() != WireMalformedResponse ||
+		wire.PhysicalRequestID() != handle.RequestID() ||
+		wire.WireResponseID() == 0 ||
+		!bytes.Equal(wire.Bytes(), frame) {
+		t.Fatalf("result/wire = %#v / %#v", result, wire)
+	}
 }
 
 func TestRTUEndpointClaimsOneFixtureIdentity(t *testing.T) {

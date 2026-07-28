@@ -347,6 +347,31 @@ func TestTCPTransportOwnsConcreteWriteAndReadCorrelation(t *testing.T) {
 	}
 }
 
+func TestTCPTransportQueuesReadDeadlineRefreshWithoutActiveRead(t *testing.T) {
+	client, server := net.Pipe()
+	defer func() { _ = server.Close() }()
+	owner := newTestConnectionOwner(t, 1, 1)
+	transport, err := newTCPTransport(client, owner, 260)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _, _ = transport.closeTerminal() }()
+
+	transport.refreshActiveReadDeadline()
+	interrupter := newSocketInterrupter(client, client.SetReadDeadline)
+	active := transport.registerActiveRead(10*time.Second, interrupter)
+	if !active.rearm {
+		t.Fatal("deadline refresh was lost before active read registration")
+	}
+	if transport.pendingReadRearm {
+		t.Fatal("pending deadline refresh was not consumed")
+	}
+	transport.finishActiveRead(active)
+	if err := interrupter.Reset(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestTCPTransportEOFClosesOwnerAndFailsSiblingWaiters(t *testing.T) {
 	client, server := net.Pipe()
 	owner := newTestConnectionOwner(t, 2, 2)

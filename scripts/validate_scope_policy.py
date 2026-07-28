@@ -16,16 +16,61 @@ EXPECTED_POLICY = {
     "schema": "helianthus-modbus-boundary/v1",
     "mode": "read_only",
     "implementation_lock": "m1_protocol",
-    "allowed_product_go_files": ["device_id.go", "doc.go", "pdu.go"],
+    "allowed_product_go_files": [
+        "device_id.go",
+        "doc.go",
+        "pdu.go",
+        "tcp_adu.go",
+        "tcp_coalescing.go",
+        "tcp_endpoint.go",
+        "tcp_owner.go",
+        "tcp_pool.go",
+        "tcp_scheduler.go",
+        "tcp_transport.go",
+    ],
     "allowed_product_go_sha256": {
         "device_id.go": (
             "5bcad6b6af8ba827ee16ea832c7d688e0d851b9dabb42376fefb2a4837bd0d9f"
         ),
         "doc.go": (
-            "1c61f67ded68b6eba4d6af2fdfe3e840628529af9ebbe2457de3962f8b2f093d"
+            "9f16ddba12a48cb50566ec16472d9fb170a6894059ffec2ad59b3855836133bc"
         ),
         "pdu.go": (
             "6e10a628f3f79d5c19c7c51307308179644364a5ba2c698e39e4ec49ef4e1d8b"
+        ),
+        "tcp_adu.go": (
+            "29468e151d3b241ac49cda6e97be2c1e78561bb41703be347ff0dbf17650c42b"
+        ),
+        "tcp_coalescing.go": (
+            "e301563bf5d37bcd5c69b98f071f86e49167f290afa43abfc50f6e01017b47eb"
+        ),
+        "tcp_endpoint.go": (
+            "28ee5217b93240ee1b8a0056da9411d823c79adcf7116579cbf08595855fcffb"
+        ),
+        "tcp_owner.go": (
+            "1ee599e92b1640a4d591d68f5f5c63c30453163a449da5ce6fea6dd423f7fd93"
+        ),
+        "tcp_pool.go": (
+            "bdbc8f871915f1173d67a211dcff8572516e071cdb3d1793a463f5598c8e7114"
+        ),
+        "tcp_scheduler.go": (
+            "d30b7154b9762380dc69bb334436abf62cde45273310a829c08ed2fac9b27252"
+        ),
+        "tcp_transport.go": (
+            "774ad5047bcf183b2df9e01393b48985db6c371e3c8f66048db67a459a433277"
+        ),
+    },
+    "trusted_go_tool_sha256": {
+        "scripts/acceptance_evidence/main.go": (
+            "903cfc5df5569c316186032ab2da644dcb664a51548b064e3d3e67c945b96880"
+        ),
+        "scripts/read_only_surface/main.go": (
+            "b167da339c266b76c8917f5751aa3bbd5acaeed264d86085597759434ca9725a"
+        ),
+    },
+    "trusted_python_tool_sha256": {
+        "scripts/validate_m1_02_acceptance.py": (
+            "817a5de15f9d806b7f82443ae20112fc6efe8563cdbdab5da718e67bffb49962"
         ),
     },
     "allowed_operations": [
@@ -63,6 +108,20 @@ class PolicyError(RuntimeError):
     pass
 
 
+TRUSTED_GO_TOOL_FILES = {
+    "scripts/acceptance_evidence/main.go",
+    "scripts/read_only_surface/main.go",
+}
+TRUSTED_PYTHON_TOOL_FILES = {
+    "scripts/validate_m1_02_acceptance.py",
+}
+
+
+def is_trusted_go_tool(path: Path, root: Path) -> bool:
+    relative = path.relative_to(root).as_posix()
+    return relative in TRUSTED_GO_TOOL_FILES
+
+
 def load_policy(root: Path) -> dict[str, object]:
     path = root / "policy" / "phase1-readonly.json"
     try:
@@ -97,6 +156,106 @@ def validate_go_sources(root: Path, policy: dict[str, object]) -> None:
                 raise PolicyError(f"{path.relative_to(root)} contains forbidden token {token}")
 
 
+def product_go_sources(root: Path) -> dict[str, str]:
+    return {
+        path.relative_to(root).as_posix(): path.read_text(encoding="utf-8")
+        for path in sorted(root.rglob("*.go"))
+        if ".git" not in path.parts
+        and not path.name.endswith("_test.go")
+        and not is_trusted_go_tool(path, root)
+    }
+
+
+def validate_read_only_wire_surface(root: Path) -> None:
+    sources = product_go_sources(root)
+    output_call = re.compile(
+        r"\.(?:Write|WriteString|WriteByte|WriteRune|WriteTo|ReadFrom|Encode|Flush)"
+        r"\s*\(|\b(?:io\.(?:Copy|CopyBuffer|CopyN)|fmt\.Fprint(?:f|ln)?|"
+        r"os\.WriteFile)\s*\("
+    )
+    write_sites = [
+        (relative, line.strip())
+        for relative, source in sources.items()
+        for line in source.splitlines()
+        if output_call.search(line)
+    ]
+    if write_sites != [
+        ("tcp_transport.go", "written, writeErr := transport.conn.Write(adu)")
+    ]:
+        raise PolicyError(f"unexpected product write sites: {write_sites}")
+
+    raw_encoder_sites = [
+        (relative, line.strip())
+        for relative, source in sources.items()
+        for line in source.splitlines()
+        if re.search(r"\bencodeTCPADU\s*\(", line)
+    ]
+    if raw_encoder_sites != [
+        ("tcp_adu.go", "return encodeTCPADU(transactionID, unitID, pdu)"),
+        ("tcp_adu.go", "return encodeTCPADU(transactionID, unitID, pdu)"),
+        ("tcp_adu.go", "func encodeTCPADU("),
+    ]:
+        raise PolicyError(
+            f"unexpected raw TCP encoder sites: {raw_encoder_sites}"
+        )
+
+    function_codes: dict[str, int] = {}
+    declaration = re.compile(
+        r"^\s*(\w+)\s+FunctionCode\s*=\s*(0x[0-9a-fA-F]+|\d+)\s*$"
+    )
+    for source in sources.values():
+        for line in source.splitlines():
+            match = declaration.match(line)
+            if match:
+                function_codes[match.group(1)] = int(match.group(2), 0)
+    expected_codes = {
+        "FunctionReadHoldingRegisters": 3,
+        "FunctionReadInputRegisters": 4,
+        "FunctionEncapsulatedInterface": 43,
+    }
+    if function_codes != expected_codes:
+        raise PolicyError(f"unexpected function-code declarations: {function_codes}")
+
+    byte_api_pattern = re.compile(
+        r"func\s+(?:\([^)]*\)\s+)?([A-Z]\w*)\s*"
+        r"\([^)]*\)\s*(?:\(\s*)?\[\]byte",
+        re.MULTILINE,
+    )
+    byte_apis = {
+        relative: sorted(byte_api_pattern.findall(source))
+        for relative, source in sources.items()
+        if byte_api_pattern.search(source)
+    }
+    expected_byte_apis = {
+        "device_id.go": ["EncodePDU"],
+        "pdu.go": ["EncodePDU"],
+        "tcp_adu.go": [
+            "Bytes",
+            "EncodeTCPDeviceIDAccessADU",
+            "EncodeTCPReadADU",
+            "PDU",
+        ],
+        "tcp_owner.go": ["Bytes"],
+    }
+    if byte_apis != expected_byte_apis:
+        raise PolicyError(f"unexpected exported byte APIs: {byte_apis}")
+
+    pdu_literals = {
+        relative: source.count("return []byte{")
+        for relative, source in sources.items()
+        if "return []byte{" in source
+    }
+    if pdu_literals != {"device_id.go": 1, "pdu.go": 1}:
+        raise PolicyError(f"unexpected direct PDU emitters: {pdu_literals}")
+    if "return []byte{\n\t\tbyte(request.function)," not in sources["pdu.go"]:
+        raise PolicyError("register PDU does not emit its validated function")
+    if (
+        "return []byte{\n\t\tbyte(FunctionEncapsulatedInterface),"
+        not in sources["device_id.go"]
+    ):
+        raise PolicyError("Device Identification PDU function changed")
+
+
 def validate_product_lock(root: Path, policy: dict[str, object]) -> None:
     if policy["implementation_lock"] != "m1_protocol":
         raise PolicyError("implementation lock must remain m1_protocol")
@@ -104,7 +263,9 @@ def validate_product_lock(root: Path, policy: dict[str, object]) -> None:
     actual = {
         path.relative_to(root).as_posix()
         for path in root.rglob("*.go")
-        if ".git" not in path.parts and not path.name.endswith("_test.go")
+        if ".git" not in path.parts
+        and not path.name.endswith("_test.go")
+        and not is_trusted_go_tool(path, root)
     }
     unexpected = actual - allowed
     missing = allowed - actual
@@ -123,6 +284,32 @@ def validate_product_lock(root: Path, policy: dict[str, object]) -> None:
         actual = hashlib.sha256((root / relative).read_bytes()).hexdigest()
         if actual != expected:
             raise PolicyError(f"product Go-file content changed: {relative}")
+
+
+def validate_tool_lock(root: Path, policy: dict[str, object]) -> None:
+    expected = {
+        str(path): str(digest)
+        for path, digest in policy["trusted_go_tool_sha256"].items()
+    }
+    if set(expected) != TRUSTED_GO_TOOL_FILES:
+        raise PolicyError("trusted Go-tool inventory changed")
+    for relative, digest in expected.items():
+        actual = hashlib.sha256((root / relative).read_bytes()).hexdigest()
+        if actual != digest:
+            raise PolicyError(f"trusted Go-tool content changed: {relative}")
+
+
+def validate_python_tool_lock(root: Path, policy: dict[str, object]) -> None:
+    expected = {
+        str(path): str(digest)
+        for path, digest in policy["trusted_python_tool_sha256"].items()
+    }
+    if set(expected) != TRUSTED_PYTHON_TOOL_FILES:
+        raise PolicyError("trusted Python-tool inventory changed")
+    for relative, digest in expected.items():
+        actual = hashlib.sha256((root / relative).read_bytes()).hexdigest()
+        if actual != digest:
+            raise PolicyError(f"trusted Python-tool content changed: {relative}")
 
 
 def go_imports(root: Path) -> list[str]:
@@ -149,9 +336,40 @@ def go_imports(root: Path) -> list[str]:
     return [line for line in result.stdout.splitlines() if line]
 
 
+def validate_go_packages(root: Path) -> None:
+    expected = {
+        "github.com/Project-Helianthus/helianthus-modbus",
+        (
+            "github.com/Project-Helianthus/helianthus-modbus/"
+            "scripts/acceptance_evidence"
+        ),
+        (
+            "github.com/Project-Helianthus/helianthus-modbus/"
+            "scripts/read_only_surface"
+        ),
+    }
+    result = subprocess.run(
+        ["go", "list", "-f", "{{.ImportPath}}", "./..."],
+        cwd=root,
+        env={**__import__("os").environ, "GOWORK": "off"},
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise PolicyError(f"go list failed: {result.stderr.strip()}")
+    actual = {line for line in result.stdout.splitlines() if line}
+    if actual != expected:
+        raise PolicyError(f"Go package inventory changed: {sorted(actual)}")
+
+
 def validate(root: Path) -> None:
     policy = load_policy(root)
     validate_product_lock(root, policy)
+    validate_tool_lock(root, policy)
+    validate_python_tool_lock(root, policy)
+    validate_go_packages(root)
+    validate_read_only_wire_surface(root)
     validate_imports(go_imports(root), policy)
     validate_go_sources(root, policy)
 

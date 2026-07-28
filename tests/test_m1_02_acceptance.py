@@ -137,13 +137,25 @@ class M102AcceptanceTests(unittest.TestCase):
             validator.validate_tdd_red(
                 ROOT,
                 {
-                    "commit_sha": "PENDING_REBUILT_RED_COMMIT",
+                    "commit_sha": "037264cbfdea82fb73c64978fa538c34855cf48b",
                     "required_shape": "tests_only_parented_by_fmv3_m1_01",
                     "hosted_ci_conclusion": "failure",
                     "hosted_ci_run_url": None,
                 },
                 set(),
                 verify_hosted=False,
+            )
+
+    def test_hosted_tdd_red_uses_numeric_run_id(self) -> None:
+        run_id = validator.github_run_id(
+            "https://github.com/Project-Helianthus/"
+            "helianthus-modbus/actions/runs/30353538725"
+        )
+        self.assertEqual(run_id, "30353538725")
+        with self.assertRaises(validator.AcceptanceError):
+            validator.github_run_id(
+                "https://github.com/Project-Helianthus/"
+                "helianthus-modbus/actions/runs/not-a-run"
             )
 
 

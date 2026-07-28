@@ -6,29 +6,36 @@ cd "$repo_root"
 export GOWORK=off
 
 echo "==> terminology gate"
-if git grep -nIwiE 'm[a]ster|s[l]ave'; then
+if rg -nIwi 'm[a]ster|s[l]ave' . --glob '!.git/**'; then
   echo "Found legacy terminology."
   exit 1
 fi
 
+echo "==> Modbus companion consumer lock"
+./scripts/validate_companion_lock.sh
+
 echo "==> scope gate"
 ./scripts/scope_gate.sh
+
+echo "==> read-only AST surface"
+GOWORK=off go run ./scripts/read_only_surface .
+
+echo "==> FMV3-M1-02 acceptance map"
+python3 scripts/validate_m1_02_acceptance.py
 
 echo "==> scope policy mutation tests"
 python3 -m unittest discover -s tests -p 'test_*.py'
 
-echo "==> Modbus companion consumer lock"
-./scripts/validate_companion_lock.sh
-
 echo "==> gofmt"
-go_files="$(git ls-files '*.go')"
-if [[ -n "$go_files" ]]; then
-  unformatted="$(gofmt -l $go_files)"
-  if [[ -n "$unformatted" ]]; then
-    echo "gofmt required for:"
-    echo "$unformatted"
-    exit 1
-  fi
+unformatted="$(
+  while IFS= read -r go_file; do
+    gofmt -l "$go_file"
+  done < <(rg --files -g '*.go' -g '!.git/**' | sort)
+)"
+if [[ -n "$unformatted" ]]; then
+  echo "gofmt required for:"
+  echo "$unformatted"
+  exit 1
 fi
 
 echo "==> go vet"

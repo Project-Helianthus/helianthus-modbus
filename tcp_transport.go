@@ -829,6 +829,10 @@ func (transport *TCPTransport) writeReservationUntil(
 			-1,
 		)
 	}
+	identity, err := transport.owner.reservationWireIdentity(reservation)
+	if err != nil {
+		return OwnerTransition{}, err
+	}
 	operation := newTCPTransportOperation(
 		transport,
 		ctx,
@@ -841,7 +845,12 @@ func (transport *TCPTransport) writeReservationUntil(
 			RequestID:         requestID,
 			PhysicalRequestID: reservation.PhysicalRequestID(),
 			TransactionID:     reservation.TransactionID(),
+			UnitID:            identity.unitID,
 			DeadlineOffset:    deadlineOffset,
+			RequestedFunction: identity.function,
+			LogicalTable:      identity.table,
+			PhysicalOffset:    identity.offset,
+			PhysicalQuantity:  identity.quantity,
 		},
 	)
 	defer operation.stopAndJoin()
@@ -868,16 +877,24 @@ func (transport *TCPTransport) writeReservationUntil(
 		transition, cleanupErr := transport.releasePreWrite(reservation)
 		return transition, combineErrors(err, cleanupErr)
 	}
-	adu, identity, err := transport.owner.encodeReservation(reservation)
+	adu, encodedIdentity, err :=
+		transport.owner.encodeReservation(reservation)
 	if err != nil {
 		transition, cleanupErr := transport.releasePreWrite(reservation)
 		return transition, combineErrors(err, cleanupErr)
 	}
+	if encodedIdentity != identity {
+		identityErr := protocolError(
+			ErrorInvalidRequest,
+			identity.function,
+			0,
+			"reservation_identity_changed",
+			-1,
+		)
+		transition, cleanupErr := transport.releasePreWrite(reservation)
+		return transition, combineErrors(identityErr, cleanupErr)
+	}
 	operation.mutateEventFields(func(fields *tcpEventFields) {
-		fields.RequestedFunction = identity.function
-		fields.LogicalTable = identity.table
-		fields.PhysicalOffset = identity.offset
-		fields.PhysicalQuantity = identity.quantity
 		fields.RawADUHex = hex.EncodeToString(adu)
 	})
 	operation.recordOnly(TCPEventWritePrepared)

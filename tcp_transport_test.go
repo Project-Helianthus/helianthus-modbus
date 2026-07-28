@@ -122,6 +122,12 @@ func newCancellationOnAfterFuncStopContext() *cancellationOnAfterFuncStopContext
 	}
 }
 
+func cancelledContext() context.Context {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	return ctx
+}
+
 func (ctx *cancellationOnAfterFuncStopContext) Done() <-chan struct{} {
 	return ctx.done
 }
@@ -977,6 +983,98 @@ func TestTCPTransportWriteReservationRetainsPhysicalOperationTrace(
 		if !seen {
 			t.Fatalf("%s event missing", kind)
 		}
+	}
+}
+
+func TestTCPTransportDirectPreWriteEventsRetainPhysicalIdentity(t *testing.T) {
+	tests := []struct {
+		name      string
+		ctx       context.Context
+		deadline  time.Duration
+		eventKind TCPTransportEventKind
+		wantError error
+	}{
+		{
+			name:      "caller cancellation",
+			ctx:       cancelledContext(),
+			deadline:  time.Second,
+			eventKind: TCPEventCallerCancellation,
+			wantError: context.Canceled,
+		},
+		{
+			name:      "immediate deadline",
+			ctx:       context.Background(),
+			deadline:  0,
+			eventKind: TCPEventRequestTimerFire,
+			wantError: context.DeadlineExceeded,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			client, server := net.Pipe()
+			defer func() { _ = server.Close() }()
+			owner := newTestConnectionOwner(t, 1, 1)
+			sink := &recordingTCPEventSink{}
+			transport, err := newTCPTransportWithConfig(
+				client,
+				owner,
+				TCPTransportConfig{
+					MaxBufferedBytes: 260,
+					RequestDeadline:  time.Second,
+					ResponseDeadline: time.Second,
+					Clock:            &virtualTCPClock{},
+					EventSink:        sink,
+				},
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer owner.Close()
+			request, err := NewReadRegistersRequest(
+				FunctionReadInputRegisters,
+				10,
+				2,
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			reservation, err := owner.ReserveRead(7, request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = transport.writeReservationUntil(
+				test.ctx,
+				reservation,
+				test.deadline,
+				0,
+			)
+			if !errors.Is(err, test.wantError) {
+				t.Fatalf("write error = %v, want %v", err, test.wantError)
+			}
+			required := map[TCPTransportEventKind]bool{
+				TCPEventRequestTimerArm: false,
+				test.eventKind:          false,
+			}
+			for _, event := range sink.snapshot() {
+				if _, ok := required[event.Kind]; !ok {
+					continue
+				}
+				required[event.Kind] = true
+				if event.UnitID != 7 ||
+					event.RequestedFunction != FunctionReadInputRegisters ||
+					event.LogicalTable != InputRegisters ||
+					event.PhysicalOffset != 10 ||
+					event.PhysicalQuantity != 2 ||
+					event.RawADUHex != "" {
+					t.Fatalf("%s pre-write trace = %#v", event.Kind, event)
+				}
+			}
+			for kind, seen := range required {
+				if !seen {
+					t.Fatalf("%s event missing", kind)
+				}
+			}
+		})
 	}
 }
 

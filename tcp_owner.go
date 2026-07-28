@@ -56,6 +56,7 @@ type reservationWireIdentity struct {
 	table    LogicalTable
 	offset   uint16
 	quantity uint16
+	unitID   byte
 }
 
 // TransactionID returns the allocated socket-lifetime transaction identifier.
@@ -916,11 +917,8 @@ func (owner *TCPConnectionOwner) encodeReservation(
 	if err != nil {
 		return nil, reservationWireIdentity{}, err
 	}
-	identity := reservationWireIdentity{function: request.function}
+	identity := wireIdentityFor(request)
 	if request.kind == requestRead {
-		identity.table = request.read.Table()
-		identity.offset = request.read.Offset()
-		identity.quantity = request.read.Quantity()
 		adu, encodeErr := EncodeTCPReadADU(
 			request.transactionID,
 			request.unitID,
@@ -934,6 +932,34 @@ func (owner *TCPConnectionOwner) encodeReservation(
 		request.deviceID,
 	)
 	return adu, identity, encodeErr
+}
+
+func (owner *TCPConnectionOwner) reservationWireIdentity(
+	reservation TCPReservation,
+) (reservationWireIdentity, error) {
+	if owner == nil {
+		return reservationWireIdentity{}, invalidOwner()
+	}
+	owner.mu.Lock()
+	defer owner.mu.Unlock()
+	request, err := owner.requestFor(reservation, requestReserved)
+	if err != nil {
+		return reservationWireIdentity{}, err
+	}
+	return wireIdentityFor(request), nil
+}
+
+func wireIdentityFor(request *ownedRequest) reservationWireIdentity {
+	identity := reservationWireIdentity{
+		function: request.function,
+		unitID:   request.unitID,
+	}
+	if request.kind == requestRead {
+		identity.table = request.read.Table()
+		identity.offset = request.read.Offset()
+		identity.quantity = request.read.Quantity()
+	}
+	return identity
 }
 
 // Generation returns the current socket generation.

@@ -6,6 +6,7 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -142,6 +143,51 @@ class M103AcceptanceTests(unittest.TestCase):
         )
         with self.assertRaises(validator.AcceptanceError):
             validator.validate_authorization(payload)
+
+    def test_pull_request_commit_identity_drift_is_rejected(self) -> None:
+        document = json.loads(
+            (ROOT / "policy" / "m1-03-acceptance.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        pull_request = document["gates"]["pull_request"]
+        for field in ("head_sha", "merge_sha"):
+            drifted = dict(pull_request)
+            drifted[field] = "0" * 40
+            with self.subTest(field=field):
+                with self.assertRaises(validator.AcceptanceError):
+                    validator.validate_pull_request(
+                        ROOT,
+                        drifted,
+                        (
+                            "f5e55fccafc060c5556d5510ddb373dc8dbc2bf4"
+                        ),
+                        verify_hosted=False,
+                        require_published=False,
+                    )
+
+    def test_pull_request_reviewed_tree_drift_is_rejected(self) -> None:
+        document = json.loads(
+            (ROOT / "policy" / "m1-03-acceptance.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        with mock.patch.object(
+            validator.base,
+            "git_tree",
+            side_effect=("reviewed-tree", "different-merge-tree"),
+        ):
+            with self.assertRaisesRegex(
+                validator.AcceptanceError,
+                "reviewed and squash-merged trees differ",
+            ):
+                validator.validate_pull_request(
+                    ROOT,
+                    document["gates"]["pull_request"],
+                    "f5e55fccafc060c5556d5510ddb373dc8dbc2bf4",
+                    verify_hosted=False,
+                    require_published=False,
+                )
 
     def test_authorization_metadata_drift_is_rejected(self) -> None:
         payload = authorization_payload()

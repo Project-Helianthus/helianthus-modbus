@@ -833,16 +833,41 @@ def validate_pull_request(
     verify_hosted: bool,
     require_published: bool,
 ) -> None:
-    if value != {
+    expected = {
         "repository": "Project-Helianthus/helianthus-modbus",
         "number": 10,
         "base": "main",
         "base_sha": "79f9c6da6efd5be9f3e31ddf62720c1a3d0bf3e7",
-    }:
+        "head_sha": "4f8e69dad3c57c798f3eb3d74f7382f3ae9d685b",
+        "merge_sha": "fd7524fee3d4ea808a67185341a3bf13f6d151cd",
+    }
+    if value != expected:
         raise AcceptanceError("M1-03 pull-request identity changed")
+    head_sha = expected["head_sha"]
+    merge_sha = expected["merge_sha"]
+    base.ensure_git_object(root, head_sha)
+    base.ensure_git_object(root, merge_sha)
+    if not base.git_is_ancestor(root, red_head, head_sha):
+        raise AcceptanceError("RTU TDD_RED is not ancestral to reviewed PR head")
+    topology = subprocess.run(
+        ["git", "rev-list", "--parents", "-n", "1", merge_sha],
+        cwd=root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if topology.returncode != 0:
+        raise AcceptanceError("cannot inspect M1-03 merge topology")
+    validate_squash_topology(
+        merge_sha,
+        expected["base_sha"],
+        topology.stdout,
+    )
+    if base.git_tree(root, head_sha) != base.git_tree(root, merge_sha):
+        raise AcceptanceError("M1-03 reviewed and squash-merged trees differ")
+    if not base.git_is_ancestor(root, merge_sha, "HEAD"):
+        raise AcceptanceError("M1-03 squash merge is not ancestral to HEAD")
     if not verify_hosted or not require_published:
-        if not base.git_is_ancestor(root, red_head, "HEAD"):
-            raise AcceptanceError("RTU TDD_RED is not ancestral to HEAD")
         return
     result = subprocess.run(
         [
@@ -867,12 +892,9 @@ def validate_pull_request(
     payload = json.loads(result.stdout)
     if payload.get("number") != 10 or payload.get("baseRefName") != "main":
         raise AcceptanceError("M1-03 pull-request metadata changed")
-    head_sha = payload.get("headRefOid")
-    if not isinstance(head_sha, str):
-        raise AcceptanceError("M1-03 pull-request head is missing")
+    if payload.get("headRefOid") != head_sha:
+        raise AcceptanceError("M1-03 reviewed PR head changed")
     head_ref = base.fetch_reviewed_pr_head(root, 10, head_sha)
-    if not base.git_is_ancestor(root, red_head, head_ref):
-        raise AcceptanceError("RTU TDD_RED is not ancestral to PR head")
     state = payload.get("state")
     if state == "OPEN":
         current = subprocess.run(
@@ -904,26 +926,10 @@ def validate_pull_request(
         or not isinstance(merge.get("oid"), str)
     ):
         raise AcceptanceError("M1-03 PR is neither open nor validly merged")
-    merge_sha = merge["oid"]
-    base.ensure_git_object(root, merge_sha)
-    topology = subprocess.run(
-        ["git", "rev-list", "--parents", "-n", "1", merge_sha],
-        cwd=root,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    if topology.returncode != 0:
-        raise AcceptanceError("cannot inspect M1-03 merge topology")
-    validate_squash_topology(
-        merge_sha,
-        str(value["base_sha"]),
-        topology.stdout,
-    )
+    if merge["oid"] != merge_sha:
+        raise AcceptanceError("M1-03 squash merge changed")
     if base.git_tree(root, head_ref) != base.git_tree(root, merge_sha):
-        raise AcceptanceError("M1-03 reviewed and squash-merged trees differ")
-    if not base.git_is_ancestor(root, merge_sha, "HEAD"):
-        raise AcceptanceError("M1-03 squash merge is not ancestral to HEAD")
+        raise AcceptanceError("M1-03 hosted reviewed tree changed")
 
 
 def validate_squash_topology(

@@ -114,7 +114,7 @@ func TestDecodeRTUReadResponseRejectsCRCAddressFunctionAndShapeMismatch(
 	}
 }
 
-func TestRTURejectsBroadcastReservedAndArbitraryFunction(t *testing.T) {
+func TestRTURejectsBroadcastReservedAndUnapprovedFunction(t *testing.T) {
 	request := rtuReadRequest(t, FunctionReadHoldingRegisters)
 	for _, unitID := range []byte{0, 248, 255} {
 		if _, err := EncodeRTUReadADU(unitID, request); err == nil {
@@ -123,7 +123,7 @@ func TestRTURejectsBroadcastReservedAndArbitraryFunction(t *testing.T) {
 	}
 	invalid := ReadRegistersRequest{function: FunctionCode(0x06), quantity: 1}
 	if _, err := EncodeRTUReadADU(1, invalid); err == nil {
-		t.Fatal("arbitrary function accepted")
+		t.Fatal("unapproved function accepted")
 	}
 }
 

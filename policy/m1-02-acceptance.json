@@ -190,6 +190,14 @@
       "hosted_ci_conclusion": "failure",
       "hosted_ci_run_url": "https://github.com/Project-Helianthus/helianthus-modbus/actions/runs/30353538725"
     },
+    "reviewed_revision": {
+      "repository": "Project-Helianthus/helianthus-modbus",
+      "pull_request": 6,
+      "reviewed_head_sha": "0aac61ddad62f664b47900334c48803587183fa3",
+      "reviewed_head_tree_sha": "ac81a5294a84a1783cb84f56cfe1ba455291c1ee",
+      "squash_merge_sha": "467229104bfe34ca90aa653ca22ad79da4fa9a32",
+      "squash_merge_tree_sha": "ac81a5294a84a1783cb84f56cfe1ba455291c1ee"
+    },
     "CI": {
       "commands": [
         "./scripts/validate_companion_lock.sh",

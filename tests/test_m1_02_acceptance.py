@@ -85,6 +85,31 @@ class M102AcceptanceTests(unittest.TestCase):
                 squash_merge_is_ancestor_of_head=True,
             )
 
+    def test_squash_merge_rejects_reviewed_head_tree_mismatch(self) -> None:
+        evidence, pull_request = self.reviewed_revision_fixture()
+        with self.assertRaises(validator.AcceptanceError):
+            validator.validate_reviewed_revision_payload(
+                evidence,
+                pull_request,
+                red_is_ancestor_of_reviewed_head=True,
+                reviewed_head_tree="4" * 40,
+                squash_merge_tree=str(evidence["squash_merge_tree_sha"]),
+                squash_merge_is_ancestor_of_head=True,
+            )
+
+    def test_squash_merge_requires_merged_main_pr(self) -> None:
+        evidence, pull_request = self.reviewed_revision_fixture()
+        pull_request["state"] = "OPEN"
+        with self.assertRaises(validator.AcceptanceError):
+            validator.validate_reviewed_revision_payload(
+                evidence,
+                pull_request,
+                red_is_ancestor_of_reviewed_head=True,
+                reviewed_head_tree=str(evidence["reviewed_head_tree_sha"]),
+                squash_merge_tree=str(evidence["squash_merge_tree_sha"]),
+                squash_merge_is_ancestor_of_head=True,
+            )
+
     def test_squash_merge_rejects_wrong_merge_sha(self) -> None:
         evidence, pull_request = self.reviewed_revision_fixture()
         pull_request["mergeCommit"] = {"oid": "3" * 40}

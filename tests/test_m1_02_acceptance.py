@@ -1,0 +1,151 @@
+from __future__ import annotations
+
+import importlib.util
+import json
+import tempfile
+import unittest
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+SCRIPT = ROOT / "scripts" / "validate_m1_02_acceptance.py"
+SPEC = importlib.util.spec_from_file_location("validate_m1_02_acceptance", SCRIPT)
+assert SPEC is not None and SPEC.loader is not None
+validator = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(validator)
+
+
+def event(action: str, test: str) -> str:
+    return json.dumps({"Action": action, "Test": test})
+
+
+class M102AcceptanceTests(unittest.TestCase):
+    def test_skipped_required_subtest_is_rejected(self) -> None:
+        output = "\n".join(
+            (
+                event("run", "TestContract"),
+                event("run", "TestContract/behavior"),
+                event("skip", "TestContract/behavior"),
+                event("pass", "TestContract"),
+            )
+        )
+        with self.assertRaises(validator.AcceptanceError):
+            validator.evaluate_mapped_test_events(
+                {"TestContract"},
+                output,
+                "",
+                0,
+            )
+
+    def test_passing_required_subtest_is_accepted(self) -> None:
+        output = "\n".join(
+            (
+                event("run", "TestContract"),
+                event("run", "TestContract/behavior"),
+                event("pass", "TestContract/behavior"),
+                event("pass", "TestContract"),
+            )
+        )
+        validator.evaluate_mapped_test_events(
+            {"TestContract"},
+            output,
+            "",
+            0,
+        )
+
+    def test_requirement_identity_is_anchored_to_canonical_sources(self) -> None:
+        document = {
+            "requirements": [
+                {"id": requirement, "source": source, "tests": ["TestContract"]}
+                for requirement, source in validator.EXPECTED_REQUIREMENTS
+            ]
+        }
+        self.assertEqual(
+            validator.validate_requirement_contract(document),
+            {"TestContract"},
+        )
+        document["requirements"][0]["source"] = "self-authored#replacement"
+        with self.assertRaises(validator.AcceptanceError):
+            validator.validate_requirement_contract(document)
+
+    def test_canonical_plan_bytes_are_content_anchored(self) -> None:
+        plan = validator.read_git_blob(
+            validator.PLAN_SOURCE["repository"],
+            validator.PLAN_SOURCE["commit_sha"],
+            validator.PLAN_SOURCE["path"],
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            lock_path = root / validator.COMPANION_SOURCE["consumer_lock_path"]
+            lock_path.parent.mkdir(parents=True)
+            lock_path.write_text(
+                json.dumps(
+                    {
+                        "repository": validator.COMPANION_SOURCE["repository"],
+                        "merged_commit_sha": (
+                            validator.COMPANION_SOURCE["commit_sha"]
+                        ),
+                        "manifest_sha256": (
+                            validator.COMPANION_SOURCE["manifest_sha256"]
+                        ),
+                    }
+                ),
+                encoding="utf-8",
+            )
+            document = {
+                "canonical_sources": {
+                    "companion_contract": validator.COMPANION_SOURCE,
+                    "execution_plan": validator.PLAN_SOURCE,
+                }
+            }
+            validator.validate_canonical_sources(root, document, plan)
+            with self.assertRaises(validator.AcceptanceError):
+                validator.validate_canonical_sources(
+                    root,
+                    document,
+                    plan + b"\n# mutation\n",
+                )
+
+    def test_transport_matrix_requires_every_canonical_tcp_row(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            relative = Path("policy/m1-02-transport-matrix.json")
+            target = root / relative
+            target.parent.mkdir(parents=True)
+            target.write_bytes((ROOT / relative).read_bytes())
+            document = {
+                "gates": {
+                    "transport_gate": {
+                        "matrix_path": relative.as_posix(),
+                        "matrix_sha256": validator.sha256(target.read_bytes()),
+                    }
+                }
+            }
+            tests = validator.validate_transport_matrix(root, document)
+            self.assertTrue(tests)
+            matrix = json.loads(target.read_text(encoding="utf-8"))
+            matrix["rows"].pop()
+            target.write_text(json.dumps(matrix), encoding="utf-8")
+            document["gates"]["transport_gate"]["matrix_sha256"] = (
+                validator.sha256(target.read_bytes())
+            )
+            with self.assertRaises(validator.AcceptanceError):
+                validator.validate_transport_matrix(root, document)
+
+    def test_pending_tdd_red_evidence_is_rejected(self) -> None:
+        with self.assertRaises(validator.AcceptanceError):
+            validator.validate_tdd_red(
+                ROOT,
+                {
+                    "commit_sha": "PENDING_REBUILT_RED_COMMIT",
+                    "required_shape": "tests_only_parented_by_fmv3_m1_01",
+                    "hosted_ci_conclusion": "failure",
+                    "hosted_ci_run_url": None,
+                },
+                set(),
+                verify_hosted=False,
+            )
+
+
+if __name__ == "__main__":
+    unittest.main()

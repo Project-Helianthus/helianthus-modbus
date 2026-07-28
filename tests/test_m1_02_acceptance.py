@@ -21,6 +21,21 @@ def event(action: str, test: str) -> str:
 
 
 class M102AcceptanceTests(unittest.TestCase):
+    def test_m1_02_owns_declared_tests_without_blocking_later_tests(self) -> None:
+        digest = "a" * 64
+        validator.validate_declared_test_files(
+            {
+                "tcp_owned_test.go": digest,
+                "rtu_later_milestone_test.go": "b" * 64,
+            },
+            {"tcp_owned_test.go": digest},
+        )
+        with self.assertRaises(validator.AcceptanceError):
+            validator.validate_declared_test_files(
+                {"tcp_owned_test.go": "c" * 64},
+                {"tcp_owned_test.go": digest},
+            )
+
     def test_go_tool_context_normalizes_symlinked_checkout(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             link = Path(temp) / "checkout"

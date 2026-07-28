@@ -927,6 +927,35 @@ def validate_doc_hosted_payload(
         )
 
 
+def validate_declared_test_files(
+    actual: object,
+    declared: object,
+) -> None:
+    if (
+        not isinstance(actual, dict)
+        or not isinstance(declared, dict)
+        or not declared
+    ):
+        raise AcceptanceError("test-file evidence is missing")
+    invalid = {
+        path: {
+            "expected": digest,
+            "actual": actual.get(path),
+        }
+        for path, digest in declared.items()
+        if (
+            not isinstance(path, str)
+            or not isinstance(digest, str)
+            or re.fullmatch(r"[0-9a-f]{64}", digest) is None
+            or actual.get(path) != digest
+        )
+    }
+    if invalid:
+        raise AcceptanceError(
+            f"owned test-file inventory or content changed: {invalid}"
+        )
+
+
 def validate_body_evidence(
     root: Path,
     document: dict[str, object],
@@ -936,8 +965,10 @@ def validate_body_evidence(
     if evidence.get("test_mains"):
         raise AcceptanceError(f"TestMain is forbidden: {evidence['test_mains']}")
     declared_files = document.get("test_file_sha256")
-    if evidence.get("test_files") != declared_files:
-        raise AcceptanceError("test-file inventory or content changed")
+    validate_declared_test_files(
+        evidence.get("test_files"),
+        declared_files,
+    )
     available = set(evidence.get("tests", {}))
     missing = required_tests - available
     if missing:

@@ -70,7 +70,7 @@ EXPECTED_POLICY = {
     },
     "trusted_python_tool_sha256": {
         "scripts/validate_m1_02_acceptance.py": (
-            "b39e14f899ee9f361be8121fad0380a5734cb1e339ab11d4ccede456fd0d4b46"
+            "f4f9e1bb0c5121d734380720c425efa17f739fc7edc84cf2b6efc267574b4eae"
         ),
     },
     "allowed_operations": [

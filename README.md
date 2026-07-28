@@ -18,11 +18,12 @@ only on an in-memory `RTUFixtureLine`; physical RTU admission remains separate
 qualification work.
 
 `NewTCPEndpoint` is the single public construction root for the current
-FC03/FC04 runtime. It owns the connection pool, scheduler, transaction owners,
-reconnect backoff, monotonic clock, and replay event sequence. The lower-level
-runtime components cannot be constructed independently by package consumers.
-FC2B/MEI type 0x0E is available at the strict codec/owner layer; aggregate TCP
-execution through `TCPEndpoint` is an explicit FMV3-M1-04 deliverable.
+read-only FC03/FC04 and FC2B/MEI type 0x0E runtime. It owns the connection
+pool, scheduler, transaction owners, reconnect backoff, monotonic clock, and
+replay event sequence. The lower-level runtime components cannot be
+constructed independently by package consumers. Device Identification
+traversal is bounded, preserves exact per-segment provenance, and publishes
+only a complete validated aggregate.
 
 `OpenConnection` accepts a raw `*net.TCPConn` in production, verifies its
 remote address against the configured `tcp://<ip-literal>:<port>` identity,
@@ -69,10 +70,8 @@ phase-one transports. There is no generic function-code escape hatch and no
 write PDU, probe, or control API. Write support requires a separate safety plan
 and authorization.
 
-The operation allowlist does not imply that every operation has reached every
-runtime layer in M1-02. M1-02 owns the aggregate FC03/FC04 endpoint. M1-04 adds
-bounded FC2B/MEI type 0x0E endpoint execution without exposing a lower-level
-socket bypass.
+M1-02 owns the aggregate FC03/FC04 endpoint. M1-04 owns bounded FC2B/MEI type
+0x0E endpoint execution without exposing a lower-level socket bypass.
 
 M1-03 owns typed FC03/FC04 RTU ADUs, CRC-16/Modbus, t1.5/t3.5 timing, and the
 fixture owner state machine. It never opens or writes a physical serial line.
@@ -89,15 +88,17 @@ timeout tombstones only the transmitted transaction. Other safe in-flight
 transactions continue on the socket, and a late matching frame remains
 request-bound diagnostic evidence without becoming deliverable.
 
-Retryable read state remains endpoint-owned and bounded while moving between
-socket generations. A provable zero-byte write may re-enter the fair queue
-without reconnect backoff. Any possibly transmitted write invalidates the
-socket and requires endpoint-owned backoff before retry on a new generation.
-Canceling the last retry does not bypass that endpoint recovery debt; the
-terminal handle remains a bounded recovery-only token until backoff completes.
-Per-dependent cancellation narrows the retained read plan, so retry cannot
-revive a cancelled logical view. `Close` terminalizes active and retryable work,
-retires every socket, and is idempotent.
+Retryable read and Device Identification state remains endpoint-owned and
+bounded while moving between socket generations. Device Identification retry
+restarts at the initial cursor and discards every partial aggregate from the
+failed attempt. A provable zero-byte write may re-enter the fair queue without
+reconnect backoff. Any possibly transmitted write invalidates the socket and
+requires endpoint-owned backoff before retry on a new generation. Canceling
+the last retry does not bypass that endpoint recovery debt; the terminal handle
+remains a bounded recovery-only token until backoff completes. Per-dependent
+cancellation narrows the retained register-read plan, so retry cannot revive a
+cancelled logical view. `Close` terminalizes active and retryable work, retires
+every socket, and is idempotent.
 
 Endpoint events use one owner-assigned sequence across every socket and record
 enqueue, admission, queue service, coalescing, write invocation/result,
@@ -150,6 +151,11 @@ fixture-only [RTU transport matrix](policy/m1-03-transport-matrix.json). That
 gate proves the RED chain, canonical authorization, offline-only product
 surface, exact `FIXTURE_ONLY_NO_HARDWARE` disposition, and every mapped RTU
 test. It performs no gateway, serial-device, or physical-hardware validation.
+FMV3-M1-04 is locked by
+[`policy/m1-04-acceptance.json`](policy/m1-04-acceptance.json) and its combined
+[transport matrix](policy/m1-04-transport-matrix.json). It proves bounded TCP
+Device Identification traversal plus fixture-only RTU parity and recovery. It
+also performs no gateway, serial-device, or physical-hardware validation.
 
 The repository follows one issue and one pull request at a time, squash merge,
 strict test-first implementation, and applicable documentation/protocol gates.

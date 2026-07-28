@@ -32,6 +32,7 @@ type RTUEventKind string
 
 const (
 	RTUEventBeginRead            RTUEventKind = "begin_read"
+	RTUEventBeginDeviceID        RTUEventKind = "begin_device_id"
 	RTUEventTransmitResult       RTUEventKind = "transmit_result"
 	RTUEventResponseReceive      RTUEventKind = "response_receive"
 	RTUEventQuarantineTransition RTUEventKind = "quarantine_transition"
@@ -63,6 +64,8 @@ type RTUEvent struct {
 	DeadlineIdentity     uint64
 	DeadlineOffset       time.Duration
 	LogicalViewID        uint64
+	DeviceIDAccess       DeviceIDAccess
+	DeviceIDObjectID     byte
 	RequestADUHex        string
 	ResponseADUHex       string
 	WireResponseID       uint64
@@ -134,6 +137,16 @@ type RTUReadPlan struct {
 	Request            ReadRegistersRequest
 }
 
+// RTUDeviceIDPlan is one typed Device Identification request for the fixture.
+type RTUDeviceIDPlan struct {
+	UnitID             byte
+	AuthorizationScope string
+	PollGeneration     uint64
+	DeadlineIdentity   uint64
+	Timeout            time.Duration
+	Request            DeviceIDRequest
+}
+
 // RTURequestHandle identifies one generation-scoped fixture request.
 type RTURequestHandle struct {
 	endpoint   *RTUFixtureEndpoint
@@ -154,11 +167,29 @@ func (handle RTURequestHandle) Generation() uint64 {
 type rtuOwnedRequest struct {
 	handle             RTURequestHandle
 	plan               RTUReadPlan
+	deviceID           *DeviceIDRequest
 	context            context.Context
 	frame              []byte
 	writeInvocation    time.Duration
 	deadline           time.Duration
 	transmitCompletion time.Duration
+}
+
+func (request *rtuOwnedRequest) function() FunctionCode {
+	if request != nil && request.deviceID != nil {
+		return FunctionEncapsulatedInterface
+	}
+	if request == nil {
+		return 0
+	}
+	return request.plan.Request.Function()
+}
+
+func (request *rtuOwnedRequest) requestKind() requestKind {
+	if request != nil && request.deviceID != nil {
+		return requestDeviceID
+	}
+	return requestRead
 }
 
 // RTUFixtureEndpoint is a serialized, offline-only RTU owner.
@@ -383,6 +414,102 @@ func (endpoint *RTUFixtureEndpoint) BeginRead(
 	}
 	event := endpoint.eventLocked(
 		RTUEventBeginRead,
+		handle.requestID,
+		plan.UnitID,
+		0,
+		"",
+	)
+	endpoint.mu.Unlock()
+	endpoint.dispatch(event)
+	return handle, cloneBytes(frame), nil
+}
+
+// BeginDeviceID admits one typed FC2B/MEI0E request for the fixture owner.
+func (endpoint *RTUFixtureEndpoint) BeginDeviceID(
+	ctx context.Context,
+	plan RTUDeviceIDPlan,
+) (RTURequestHandle, []byte, error) {
+	if endpoint == nil || ctx == nil {
+		return RTURequestHandle{}, nil, errRTUState
+	}
+	if err := endpoint.beginEventOperation(); err != nil {
+		return RTURequestHandle{}, nil, err
+	}
+	defer endpoint.emitMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return RTURequestHandle{}, nil, err
+	}
+	frame, err := EncodeRTUDeviceIDAccessADU(plan.UnitID, plan.Request)
+	if err != nil {
+		return RTURequestHandle{}, nil, err
+	}
+	if plan.AuthorizationScope == "" ||
+		plan.PollGeneration == 0 ||
+		plan.DeadlineIdentity == 0 ||
+		plan.Timeout <= 0 {
+		return RTURequestHandle{}, nil, protocolError(
+			ErrorInvalidRequest,
+			FunctionEncapsulatedInterface,
+			0,
+			"rtu_device_id_plan",
+			-1,
+		)
+	}
+	endpoint.mu.Lock()
+	if endpoint.state != RTUStateIdle {
+		endpoint.mu.Unlock()
+		return RTURequestHandle{}, nil, errRTUState
+	}
+	if endpoint.nextRequestID == 0 ||
+		endpoint.nextRequestID == math.MaxUint64 ||
+		!endpoint.canEmitLocked(1) {
+		endpoint.requireRecoveryLocked("request_identity_or_event_capacity")
+		endpoint.mu.Unlock()
+		return RTURequestHandle{}, nil, errRTUState
+	}
+	now, err := endpoint.nowLocked()
+	if err != nil {
+		endpoint.mu.Unlock()
+		return RTURequestHandle{}, nil, err
+	}
+	deadline, ok := checkedRTUOffsetAdd(now, plan.Timeout)
+	if !ok {
+		endpoint.mu.Unlock()
+		return RTURequestHandle{}, nil, protocolError(
+			ErrorInvalidRange,
+			FunctionEncapsulatedInterface,
+			0,
+			"rtu_deadline",
+			-1,
+		)
+	}
+	handle := RTURequestHandle{
+		endpoint:   endpoint,
+		requestID:  endpoint.nextRequestID,
+		generation: endpoint.generation,
+	}
+	endpoint.nextRequestID++
+	deviceID := plan.Request
+	endpoint.state = RTUStateWriting
+	endpoint.lastObservedByte = 0
+	endpoint.haveObservedByte = false
+	endpoint.current = &rtuOwnedRequest{
+		handle: handle,
+		plan: RTUReadPlan{
+			UnitID:             plan.UnitID,
+			AuthorizationScope: plan.AuthorizationScope,
+			PollGeneration:     plan.PollGeneration,
+			DeadlineIdentity:   plan.DeadlineIdentity,
+			Timeout:            plan.Timeout,
+		},
+		deviceID:        &deviceID,
+		context:         ctx,
+		frame:           cloneBytes(frame),
+		writeInvocation: now,
+		deadline:        deadline,
+	}
+	event := endpoint.eventLocked(
+		RTUEventBeginDeviceID,
 		handle.requestID,
 		plan.UnitID,
 		0,
@@ -874,10 +1001,35 @@ func (endpoint *RTUFixtureEndpoint) setQuarantineLocked(
 
 // RTUReadResult is one request-bound fixture response.
 type RTUReadResult struct {
+	deliverable     bool
+	response        ReadRegistersResponse
+	deviceIDSegment *DeviceIDSegment
+	wire            WireResponse
+	logical         LogicalReadView
+}
+
+// RTUDeviceIDResult is one request-bound fixture Device ID segment.
+type RTUDeviceIDResult struct {
 	deliverable bool
-	response    ReadRegistersResponse
+	segment     DeviceIDSegment
 	wire        WireResponse
-	logical     LogicalReadView
+}
+
+// Deliverable reports whether the segment completed the active request.
+func (result RTUDeviceIDResult) Deliverable() bool {
+	return result.deliverable
+}
+
+// Segment returns a deep copy of the decoded Device ID segment.
+func (result RTUDeviceIDResult) Segment() DeviceIDSegment {
+	segment := result.segment
+	segment.objects = cloneDeviceIDObjects(segment.objects)
+	return segment
+}
+
+// WireResponse returns the shared transport-neutral wire response view.
+func (result RTUDeviceIDResult) WireResponse() WireResponse {
+	return result.wire
 }
 
 // Deliverable reports whether the response completed the active request.
@@ -1015,6 +1167,31 @@ func (endpoint *RTUFixtureEndpoint) FeedByte(value byte) error {
 
 // EndFrame completes the currently observed fixture frame after t3.5 idle.
 func (endpoint *RTUFixtureEndpoint) EndFrame() (RTUReadResult, error) {
+	return endpoint.endFrame(requestRead)
+}
+
+// EndDeviceIDFrame completes one observed FC2B/MEI0E fixture frame.
+func (endpoint *RTUFixtureEndpoint) EndDeviceIDFrame() (
+	RTUDeviceIDResult,
+	error,
+) {
+	result, err := endpoint.endFrame(requestDeviceID)
+	deviceID := RTUDeviceIDResult{
+		deliverable: result.deliverable,
+		wire:        result.wire,
+	}
+	if result.deviceIDSegment != nil {
+		deviceID.segment = *result.deviceIDSegment
+		deviceID.segment.objects = cloneDeviceIDObjects(
+			result.deviceIDSegment.objects,
+		)
+	}
+	return deviceID, err
+}
+
+func (endpoint *RTUFixtureEndpoint) endFrame(
+	expected requestKind,
+) (RTUReadResult, error) {
 	if endpoint == nil {
 		return RTUReadResult{}, errRTUState
 	}
@@ -1053,6 +1230,10 @@ func (endpoint *RTUFixtureEndpoint) EndFrame() (RTUReadResult, error) {
 		return RTUReadResult{}, errRTUFrameDiscarded
 	case RTUStateResponseWait:
 		current := endpoint.current
+		if current == nil || current.requestKind() != expected {
+			endpoint.mu.Unlock()
+			return RTUReadResult{}, errRTUState
+		}
 		adu, frameErr := endpoint.decoder.EndFrame(now)
 		if frameErr != nil && len(adu.Bytes()) == 0 {
 			endpoint.mu.Unlock()
@@ -1188,11 +1369,34 @@ func (endpoint *RTUFixtureEndpoint) receiveFrameLocked(
 	frame []byte,
 	now time.Duration,
 ) (RTUReadResult, RTUEvent, error) {
-	decoded, err := DecodeRTUReadResponseADU(
-		current.plan.UnitID,
-		current.plan.Request,
-		frame,
+	var (
+		raw      []byte
+		response ReadRegistersResponse
+		segment  *DeviceIDSegment
+		err      error
 	)
+	if current.deviceID != nil {
+		var decoded RTUDeviceIDResponseADU
+		decoded, err = DecodeRTUDeviceIDResponseADU(
+			current.plan.UnitID,
+			*current.deviceID,
+			frame,
+		)
+		raw = decoded.Bytes()
+		if err == nil {
+			value := decoded.Segment()
+			segment = &value
+		}
+	} else {
+		var decoded RTUReadResponseADU
+		decoded, err = DecodeRTUReadResponseADU(
+			current.plan.UnitID,
+			current.plan.Request,
+			frame,
+		)
+		raw = decoded.Bytes()
+		response = decoded.Response()
+	}
 	var receivedUnitID byte
 	var receivedFunction FunctionCode
 	if len(frame) != 0 {
@@ -1201,9 +1405,10 @@ func (endpoint *RTUFixtureEndpoint) receiveFrameLocked(
 	if len(frame) > 1 {
 		receivedFunction = FunctionCode(frame[1])
 	}
+	requestedFunction := current.function()
 	candidate := receivedUnitID == current.plan.UnitID &&
-		(receivedFunction == current.plan.Request.Function() ||
-			receivedFunction == current.plan.Request.Function()|0x80)
+		(receivedFunction == requestedFunction ||
+			receivedFunction == requestedFunction|0x80)
 	if !candidate {
 		if endpoint.nextDiagnosticID == 0 ||
 			endpoint.nextDiagnosticID == math.MaxUint64 ||
@@ -1226,7 +1431,7 @@ func (endpoint *RTUFixtureEndpoint) receiveFrameLocked(
 				UnitID:                      receivedUnitID,
 				ReceivedFunction:            receivedFunction,
 			},
-			bytes: decoded.Bytes(),
+			bytes: raw,
 		}
 		event := endpoint.eventLocked(
 			RTUEventResponseReceive,
@@ -1236,7 +1441,7 @@ func (endpoint *RTUFixtureEndpoint) receiveFrameLocked(
 			string(WireDroppedUncorrelated),
 		)
 		event.ReceivedFunction = receivedFunction
-		event.ResponseADUHex = hex.EncodeToString(decoded.Bytes())
+		event.ResponseADUHex = hex.EncodeToString(raw)
 		event.DiagnosticFrameID = diagnosticID
 		event.WireOutcome = WireDroppedUncorrelated
 		return RTUReadResult{wire: wire}, event, err
@@ -1261,7 +1466,6 @@ func (endpoint *RTUFixtureEndpoint) receiveFrameLocked(
 		endpoint.current = nil
 		return RTUReadResult{}, RTUEvent{}, errRTUState
 	}
-	response := decoded.Response()
 	wireID := endpoint.nextWireResponseID
 	endpoint.nextWireResponseID++
 	provenance := WireProvenance{
@@ -1269,11 +1473,16 @@ func (endpoint *RTUFixtureEndpoint) receiveFrameLocked(
 		Transport:           TransportRTU,
 		TransportGeneration: endpoint.generation,
 		UnitID:              current.plan.UnitID,
-		RequestedFunction:   current.plan.Request.Function(),
+		RequestedFunction:   requestedFunction,
 		ReceivedFunction:    receivedFunction,
-		Table:               current.plan.Request.Table(),
-		Offset:              current.plan.Request.Offset(),
-		Quantity:            current.plan.Request.Quantity(),
+	}
+	if current.deviceID != nil {
+		provenance.DeviceIDAccess = current.deviceID.Access()
+		provenance.DeviceIDObjectID = current.deviceID.ObjectID()
+	} else {
+		provenance.Table = current.plan.Request.Table()
+		provenance.Offset = current.plan.Request.Offset()
+		provenance.Quantity = current.plan.Request.Quantity()
 	}
 	outcome := WireSuccessfulData
 	deliverable := true
@@ -1293,10 +1502,11 @@ func (endpoint *RTUFixtureEndpoint) receiveFrameLocked(
 		physicalRequestID: current.handle.requestID,
 		provenance:        provenance,
 		words:             append([]uint16(nil), response.Words...),
-		bytes:             decoded.Bytes(),
+		deviceIDSegment:   cloneDeviceIDSegment(segment),
+		bytes:             raw,
 	}
 	var logical LogicalReadView
-	if deliverable {
+	if deliverable && current.deviceID == nil {
 		logical = LogicalReadView{
 			logicalViewID:  current.plan.LogicalViewID,
 			wireResponseID: wireID,
@@ -1328,15 +1538,16 @@ func (endpoint *RTUFixtureEndpoint) receiveFrameLocked(
 		string(outcome),
 	)
 	event.ReceivedFunction = receivedFunction
-	event.ResponseADUHex = hex.EncodeToString(decoded.Bytes())
+	event.ResponseADUHex = hex.EncodeToString(raw)
 	event.WireResponseID = wireID
 	event.WireOutcome = outcome
 	endpoint.current = nil
 	return RTUReadResult{
-		deliverable: deliverable,
-		response:    response,
-		wire:        wire,
-		logical:     logical,
+		deliverable:     deliverable,
+		response:        response,
+		deviceIDSegment: cloneDeviceIDSegment(segment),
+		wire:            wire,
+		logical:         logical,
 	}, event, err
 }
 
@@ -1736,10 +1947,15 @@ func (endpoint *RTUFixtureEndpoint) eventLocked(
 		current = endpoint.quarantined
 	}
 	if current != nil {
-		event.RequestedFunction = current.plan.Request.Function()
-		event.Table = current.plan.Request.Table()
-		event.Offset = current.plan.Request.Offset()
-		event.Quantity = current.plan.Request.Quantity()
+		event.RequestedFunction = current.function()
+		if current.deviceID != nil {
+			event.DeviceIDAccess = current.deviceID.Access()
+			event.DeviceIDObjectID = current.deviceID.ObjectID()
+		} else {
+			event.Table = current.plan.Request.Table()
+			event.Offset = current.plan.Request.Offset()
+			event.Quantity = current.plan.Request.Quantity()
+		}
 		event.AuthorizationScope = current.plan.AuthorizationScope
 		event.PollGeneration = current.plan.PollGeneration
 		event.DeadlineIdentity = current.plan.DeadlineIdentity

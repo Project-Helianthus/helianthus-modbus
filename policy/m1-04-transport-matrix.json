@@ -1,0 +1,207 @@
+{
+  "schema": "helianthus.modbus.transport-gate/v1",
+  "milestone": "FMV3-M1-04",
+  "disposition": "FIXTURE_ONLY_NO_HARDWARE",
+  "execution_surface": "offline_fixture_only",
+  "canonical_source": {
+    "repository": "Project-Helianthus/helianthus-docs-ebus",
+    "commit_sha": "711a556fee344c6fe7f1ecf3253fcdb3f5f22d06",
+    "manifest_path": "docs/platform/manifests/modbus-foundation-profile-contract-v1.json",
+    "manifest_sha256": "c411e3e8a464e4b9d3a59d3f5a0c82b57e176e24dec9550b9bc0c8b3e4b28c70",
+    "recovery_field": "transport_recovery_rows"
+  },
+  "plan_source": {
+    "repository": "Project-Helianthus/helianthus-execution-plans",
+    "commit_sha": "0576544bd8851c4e32da3ca7c401270eee43ef5c",
+    "path": "fronius-modbus-multivendor-v3-w29-26.locked/plan.yaml",
+    "identity_field": "identity_operation_matrix"
+  },
+  "rows": [
+    {
+      "id": "tcp_provable_zero_no_abandonment",
+      "tests": [
+        "TestCancellationBeforeWriteAndProvableZeroDoNotTombstone",
+        "TestTCPTransportPreWriteFailuresReleaseReservation"
+      ]
+    },
+    {
+      "id": "tcp_partial_write_close_reconnect",
+      "tests": [
+        "TestPossiblyTransmittedResultForcesReconnectGeneration",
+        "TestTCPTransportWriteResultClassificationLifecycle",
+        "TestTCPEndpointUnsafeCloseGatesOpenBeforePoolRelease"
+      ]
+    },
+    {
+      "id": "tcp_indeterminate_error_close_reconnect",
+      "tests": [
+        "TestPossiblyTransmittedResultForcesReconnectGeneration",
+        "TestTCPTransportWriteResultClassificationLifecycle"
+      ]
+    },
+    {
+      "id": "tcp_cancellation_race_close_reconnect",
+      "tests": [
+        "TestTCPTransportFullByteCountDoesNotMaskCancellationRace",
+        "TestTCPTransportResponseReceiveCancellationTie",
+        "TestTCPEndpointFullTransmitCancellationRetainsRecoveryHandle",
+        "TestTCPEndpointExpiredFullTransmitEmitsResponseWaitTombstone"
+      ]
+    },
+    {
+      "id": "tcp_ambiguous_completion_close_reconnect",
+      "tests": [
+        "TestTCPTransportWriteResultClassificationLifecycle",
+        "TestUnsafeTransmitTerminalizesSiblingInflightRequests"
+      ]
+    },
+    {
+      "id": "tcp_full_transmit_timeout_tombstone",
+      "tests": [
+        "TestTCPTransportFullTransmitAbandonmentTombstonesLateResponse",
+        "TestTCPEndpointResponseTimeoutTombstonesOnlyExpiredRequest",
+        "TestTCPEndpointExpiredFullTransmitEmitsResponseWaitTombstone"
+      ]
+    },
+    {
+      "id": "tcp_full_transmit_cancellation_tombstone",
+      "tests": [
+        "TestResponseWaitAbandonmentTombstonesAndDropsLateResponse",
+        "TestTCPEndpointCancellationPrecedesItsLateResponseEvent",
+        "TestTCPEndpointResponseOutcomeLinearizesBeforeConcurrentCancel",
+        "TestTCPEndpointFullTransmitCancellationRetainsRecoveryHandle"
+      ]
+    },
+    {
+      "id": "tcp_same_socket_tombstone_reuse_rejected",
+      "tests": [
+        "TestResponseWaitAbandonmentTombstonesAndDropsLateResponse",
+        "TestConnectionOwnerUsesOneAllocatorAcrossUnits"
+      ]
+    },
+    {
+      "id": "tcp_tombstone_exhaustion_controlled_rollover",
+      "tests": [
+        "TestTombstoneExhaustionClosesSocket",
+        "TestTombstoneExhaustionClosesTransportAndReleasesPool",
+        "TestTCPEndpointTransactionIDExhaustionClosesAndReleasesSocket"
+      ]
+    },
+    {
+      "id": "tcp_old_generation_late_frame_rejected",
+      "tests": [
+        "TestTCPTransportOldSocketCannotServeReconnectedGeneration",
+        "TestPoolOwnsUniqueGenerationAllocationAcrossReconnects"
+      ]
+    },
+    {
+      "id": "rtu_provable_zero_no_abandonment",
+      "tests": [
+        "TestRTUProvableZeroNoAbandonment",
+        "TestRTUProvableZeroRetainsTerminalDeadlineCause"
+      ]
+    },
+    {
+      "id": "rtu_partial_write_quarantine",
+      "tests": [
+        "TestRTUPartialWriteQuarantine",
+        "TestRTUUnsafeAnchorIncludesFullTransmitHorizon"
+      ]
+    },
+    {
+      "id": "rtu_indeterminate_error_quarantine",
+      "tests": [
+        "TestRTUIndeterminateErrorQuarantine"
+      ]
+    },
+    {
+      "id": "rtu_cancellation_race_quarantine",
+      "tests": [
+        "TestRTUCancellationRaceQuarantine",
+        "TestRTUTickOwnsCancellationDuringWrite"
+      ]
+    },
+    {
+      "id": "rtu_ambiguous_completion_quarantine",
+      "tests": [
+        "TestRTUAmbiguousCompletionQuarantine",
+        "TestRTUTickOwnsDeadlineDuringWrite"
+      ]
+    },
+    {
+      "id": "rtu_full_transmit_timeout_quarantine",
+      "tests": [
+        "TestRTUFullTransmitTimeoutQuarantine",
+        "TestRTUTickOwnsTimeoutAfterFullTransmit",
+        "TestRTUExpiredCompleteTransmitEntersQuarantine",
+        "TestRTUExpiredResponseCannotBeatTick"
+      ]
+    },
+    {
+      "id": "rtu_full_transmit_cancellation_quarantine",
+      "tests": [
+        "TestRTUFullTransmitCancellationQuarantine",
+        "TestRTUTickOwnsCancellationAfterFullTransmit",
+        "TestRTUExpiredResponseCannotBeatTick"
+      ]
+    },
+    {
+      "id": "rtu_late_same_shape_discarded",
+      "tests": [
+        "TestRTULateSameShapeFrameIsDiscarded",
+        "TestRTULastDiscardedByteRestartsIdleProof",
+        "TestRTUBytesBufferedBeforeAbandonmentExtendIdleProof",
+        "TestRTUMalformedBytesBeforeAbandonmentExtendIdleProof",
+        "TestRTUResponseWaitRequiresT35AfterDecoderRejection",
+        "TestRTUBufferedQuarantineBytesCannotReachSuccessor"
+      ]
+    },
+    {
+      "id": "rtu_quiescence_failure_endpoint_recovery",
+      "tests": [
+        "TestRTUQuiescenceFailureRequiresExplicitRecovery",
+        "TestRTUQuiescenceBoundFailsClosed",
+        "TestRTUTickOwnsQuiescenceExpiry",
+        "TestRTUReceiveOperationsCannotBeatQuiescenceExpiry",
+        "TestRTUQuiescenceBoundaryIsExact",
+        "TestRTUQuarantineDeadlineOverflowFailsClosed",
+        "TestRTUGuardOverflowDoesNotConsumeWireIdentity",
+        "TestRTUDiscardBudgetResetsPerQuarantineEpisode",
+        "TestRTURecoverResetsGenerationScopedAllocators"
+      ]
+    },
+    {
+      "id": "tcp_fc2b_mei0e_device_identification",
+      "tests": [
+        "TestEncodeTCPDeviceIDAccessADU",
+        "TestWireResponseRetainsDeviceIDCursorProvenance",
+        "TestTCPDeviceIDTraversalAcrossTransportFrames",
+        "TestTCPDeviceIDExceptionAndMalformedTransportResponses",
+        "TestTCPEndpointDeviceIDTraversalPublishesOnlyCompleteAggregate",
+        "TestTCPEndpointDeviceIDExceptionAndMalformedAreTerminal",
+        "TestTCPEndpointDeviceIDQueuedCancellationReleasesScheduler",
+        "TestTCPEndpointDeviceIDCancellationOwnsWriteBoundary",
+        "TestTCPEndpointDeviceIDCancellationAfterWriteBeforeWaitingTombstones",
+        "TestTCPEndpointDeviceIDWaitingCancellationDropsLateResponse",
+        "TestTCPEndpointDeviceIDResponseAndCancellationLinearize",
+        "TestTCPEndpointDeviceIDProvableZeroRetryRestartsTraversal",
+        "TestTCPEndpointDeviceIDContinuationFailureRetryRestartsAtInitialCursor",
+        "TestTCPEndpointDeviceIDMalformedContinuationReleasesCapacity",
+        "TestAggregateDeviceIDRejectsPartialOrNonProgressingTraversal",
+        "TestDeviceIDLimitsMustBePositiveAndBounded"
+      ]
+    },
+    {
+      "id": "rtu_fc2b_mei0e_device_identification",
+      "tests": [
+        "TestRTUDeviceIDAccessADUFramingAndSegmentDecode",
+        "TestRTUDeviceIDResponseRetainsExceptionAndMalformedRawFrame",
+        "TestRTUDeviceIDEndpointDeliversSegmentWithWireProvenance",
+        "TestRTUDeviceIDMalformedCandidateTerminalizesWithWireIdentity",
+        "TestRTUDeviceIDTraversalAcrossFixtureFrames",
+        "TestRTUDeviceIDExceptionTerminalizesWithWireIdentity",
+        "TestRTUEndFrameOperationTypeMismatchDoesNotConsumeFrame"
+      ]
+    }
+  ]
+}

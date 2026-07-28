@@ -43,6 +43,18 @@ type TCPReadPlan struct {
 	Reads              []TCPLogicalRead
 }
 
+// TCPDeviceIDPlan is one bounded, scheduler-owned FC2B/MEI0E traversal.
+type TCPDeviceIDPlan struct {
+	Connection         TCPConnectionHandle
+	UnitID             byte
+	AuthorizationScope string
+	PollGeneration     uint64
+	DeadlineIdentity   uint64
+	Timeout            time.Duration
+	Request            DeviceIDRequest
+	Limits             DeviceIDLimits
+}
+
 // TCPConnectionHandle is an opaque endpoint-owned live socket identity.
 type TCPConnectionHandle struct {
 	endpoint     *TCPEndpoint
@@ -90,10 +102,17 @@ func (dispatch TCPDispatch) RequestID() uint64 {
 	return dispatch.requestID
 }
 
-// TCPReadBatch retains every frame and successful logical view from one read.
+// TCPDeviceIDCompletion is one fully validated endpoint traversal result.
+type TCPDeviceIDCompletion struct {
+	RequestID uint64
+	Result    DeviceIDResult
+}
+
+// TCPReadBatch retains every frame and successful result from one socket read.
 type TCPReadBatch struct {
 	Responses []WireResponse
 	Views     []LogicalReadView
+	DeviceIDs []TCPDeviceIDCompletion
 }
 
 // TCPEndpointResources reports current bounded endpoint resource use.
@@ -150,12 +169,23 @@ type endpointRequest struct {
 	pollGeneration      uint64
 	deadlineIdentity    uint64
 	group               *CoalescedRead
+	deviceID            DeviceIDRequest
+	deviceIDInitial     DeviceIDRequest
+	deviceIDLimits      DeviceIDLimits
+	deviceIDSegments    []DeviceIDSegment
 	operationDeadline   time.Duration
 	phase               endpointRequestPhase
 	dispatchID          uint64
 	physicalRequestID   uint64
 	transactionID       uint16
 	responseDeadline    time.Duration
+	writeCancel         context.CancelFunc
+	writeDone           chan struct{}
+	cancelPending       bool
+}
+
+func (request *endpointRequest) isDeviceID() bool {
+	return request != nil && request.group == nil
 }
 
 type tcpRequestBackoffState struct {
@@ -168,9 +198,41 @@ type tcpRequestBackoffState struct {
 	pollGeneration     uint64
 	deadlineIdentity   uint64
 	reads              []TCPLogicalRead
+	deviceID           DeviceIDRequest
+	deviceIDLimits     DeviceIDLimits
 	requiresBackoff    bool
 	backoffSatisfied   bool
 	backoffWaiting     bool
+}
+
+func (endpoint *TCPEndpoint) failRequest(
+	request *endpointRequest,
+) error {
+	endpoint.scheduleMu.Lock()
+	defer endpoint.scheduleMu.Unlock()
+	return endpoint.failRequestSchedulingLocked(request)
+}
+
+func (endpoint *TCPEndpoint) failRequestSchedulingLocked(
+	request *endpointRequest,
+) error {
+	if request == nil {
+		return nil
+	}
+	if request.group != nil {
+		return request.group.FailTransport()
+	}
+	if request.phase == endpointRequestQueued {
+		endpoint.scheduler.CancelQueued(request.handle.requestID)
+		return nil
+	}
+	err := endpoint.scheduler.Complete(request.handle.requestID)
+	var protocolErr *ProtocolError
+	if errors.As(err, &protocolErr) &&
+		protocolErr.Field == "request_state" {
+		return nil
+	}
+	return err
 }
 
 type tcpRequestLifecycle byte
@@ -187,7 +249,7 @@ type endpointPhysicalKey struct {
 	physicalRequestID uint64
 }
 
-// TCPEndpoint is the only public constructor root for the FC03/FC04 runtime.
+// TCPEndpoint is the only public constructor root for the read-only TCP runtime.
 type TCPEndpoint struct {
 	mu                sync.Mutex
 	enqueueMu         sync.Mutex
@@ -209,6 +271,8 @@ type TCPEndpoint struct {
 	reconnectReady    bool
 	reconnectWaiting  bool
 	afterSchedule     func()
+	afterWrite        func()
+	beforeOutcome     func()
 	remoteEndpoint    string
 	claimedRemote     bool
 	disableReason     string
@@ -584,7 +648,7 @@ func (endpoint *TCPEndpoint) CloseConnection(
 	err := endpoint.pool.closeConnection(connection.lease)
 	for _, request := range requests {
 		setTCPRequestLifecycle(request.handle, tcpRequestTerminal)
-		err = errors.Join(err, request.group.FailTransport())
+		err = errors.Join(err, endpoint.failRequest(request))
 	}
 	return err
 }
@@ -662,7 +726,7 @@ func (endpoint *TCPEndpoint) Close() error {
 	}
 	for _, request := range requests {
 		setTCPRequestLifecycle(request.handle, tcpRequestTerminal)
-		closeErr = errors.Join(closeErr, request.group.FailTransport())
+		closeErr = errors.Join(closeErr, endpoint.failRequest(request))
 	}
 	for _, connection := range connections {
 		closeErr = errors.Join(
@@ -919,6 +983,154 @@ func (endpoint *TCPEndpoint) EnqueueRead(
 	return handle, nil
 }
 
+// EnqueueDeviceID admits one complete FC2B/MEI0E traversal.
+func (endpoint *TCPEndpoint) EnqueueDeviceID(
+	plan TCPDeviceIDPlan,
+) (TCPRequestHandle, error) {
+	if endpoint == nil {
+		return TCPRequestHandle{}, invalidEndpointConfig()
+	}
+	if endpoint.eventSinkCallbackActive() {
+		return TCPRequestHandle{}, eventSinkReentryError()
+	}
+	if err := validateDeviceIDRequest(plan.Request); err != nil {
+		return TCPRequestHandle{}, err
+	}
+	if err := validateDeviceIDLimits(plan.Limits); err != nil {
+		return TCPRequestHandle{}, err
+	}
+	endpoint.enqueueMu.Lock()
+	defer endpoint.enqueueMu.Unlock()
+	if !endpoint.timelineAvailable() {
+		endpoint.disable("event_sequence_exhausted")
+		return TCPRequestHandle{}, invalidEndpointConfig()
+	}
+	now := endpoint.config.Clock.Now()
+	endpoint.mu.Lock()
+	connection, ok := endpoint.connectionLocked(plan.Connection)
+	if !ok ||
+		endpoint.closed ||
+		plan.UnitID == 0 ||
+		plan.UnitID > 247 ||
+		plan.AuthorizationScope == "" ||
+		plan.PollGeneration == 0 ||
+		plan.DeadlineIdentity == 0 ||
+		plan.Timeout <= 0 ||
+		plan.Timeout > endpoint.config.MaxRequestDeadline ||
+		now < 0 ||
+		plan.Timeout > time.Duration(math.MaxInt64)-now {
+		endpoint.mu.Unlock()
+		return TCPRequestHandle{}, protocolError(
+			ErrorInvalidRequest,
+			FunctionEncapsulatedInterface,
+			0,
+			"tcp_device_id_plan",
+			-1,
+		)
+	}
+	if endpoint.nextRequestID == 0 {
+		endpoint.mu.Unlock()
+		endpoint.disable("request_identity_exhausted")
+		return TCPRequestHandle{}, protocolError(
+			ErrorInvalidRange,
+			FunctionEncapsulatedInterface,
+			0,
+			"request_identity",
+			-1,
+		)
+	}
+	requestID := endpoint.nextRequestID
+	connectionID := connection.handle.connectionID
+	transportGeneration := connection.handle.generation
+	endpoint.mu.Unlock()
+
+	deadline := now + plan.Timeout
+	handle := TCPRequestHandle{
+		endpoint:       endpoint,
+		requestID:      requestID,
+		deadlineOffset: deadline,
+		backoff: &tcpRequestBackoffState{
+			lifecycle:          tcpRequestActive,
+			unitID:             plan.UnitID,
+			authorizationScope: plan.AuthorizationScope,
+			pollGeneration:     plan.PollGeneration,
+			deadlineIdentity:   plan.DeadlineIdentity,
+			deviceID:           plan.Request,
+			deviceIDLimits:     plan.Limits,
+		},
+	}
+	fields := tcpEventFields{
+		ConnectionID:        connectionID,
+		TransportGeneration: transportGeneration,
+		RequestID:           requestID,
+		UnitID:              plan.UnitID,
+		AuthorizationScope:  plan.AuthorizationScope,
+		PollGeneration:      plan.PollGeneration,
+		DeadlineIdentity:    plan.DeadlineIdentity,
+		DeadlineOffset:      deadline,
+		RequestedFunction:   FunctionEncapsulatedInterface,
+	}
+	endpoint.timeline.record(TCPEventEnqueue, fields)
+	if !endpoint.timelineAvailable() {
+		setTCPRequestLifecycle(handle, tcpRequestTerminal)
+		endpoint.disable("event_sequence_exhausted")
+		return TCPRequestHandle{}, eventSequenceError()
+	}
+	endpoint.scheduleMu.Lock()
+	err := endpoint.scheduler.Enqueue(ScheduledRequest{
+		RequestID: requestID,
+		Key: AdmissionKey{
+			AuthorizationScope: plan.AuthorizationScope,
+			UnitID:             plan.UnitID,
+		},
+		DeadlineOffset: int64(deadline),
+	})
+	if err != nil {
+		endpoint.scheduleMu.Unlock()
+		fields.Detail = "rejected"
+		endpoint.timeline.record(TCPEventAdmission, fields)
+		return TCPRequestHandle{}, err
+	}
+	endpoint.mu.Lock()
+	current, currentOK := endpoint.connectionLocked(plan.Connection)
+	if endpoint.closed ||
+		!currentOK ||
+		current.handle.generation != transportGeneration ||
+		endpoint.nextRequestID != requestID {
+		endpoint.mu.Unlock()
+		_ = endpoint.scheduler.CancelQueued(requestID)
+		endpoint.scheduleMu.Unlock()
+		fields.Detail = "stale_connection"
+		endpoint.timeline.record(TCPEventAdmission, fields)
+		return TCPRequestHandle{}, invalidConnectionHandle()
+	}
+	endpoint.requests[requestID] = &endpointRequest{
+		handle:              handle,
+		connectionID:        connectionID,
+		transportGeneration: transportGeneration,
+		unitID:              plan.UnitID,
+		authorizationScope:  plan.AuthorizationScope,
+		pollGeneration:      plan.PollGeneration,
+		deadlineIdentity:    plan.DeadlineIdentity,
+		deviceID:            plan.Request,
+		deviceIDInitial:     plan.Request,
+		deviceIDLimits:      plan.Limits,
+		operationDeadline:   deadline,
+		phase:               endpointRequestQueued,
+	}
+	endpoint.nextRequestID++
+	endpoint.mu.Unlock()
+	endpoint.scheduleMu.Unlock()
+	fields.Detail = "admitted"
+	endpoint.timeline.record(TCPEventAdmission, fields)
+	endpoint.timeline.record(TCPEventRequestTimerArm, fields)
+	if !endpoint.timelineAvailable() {
+		endpoint.disable("event_sequence_exhausted")
+		return TCPRequestHandle{}, eventSequenceError()
+	}
+	return handle, nil
+}
+
 // Dispatch returns the next live fair request as a one-use opaque token.
 func (endpoint *TCPEndpoint) Dispatch() (TCPDispatch, bool) {
 	if endpoint == nil {
@@ -967,7 +1179,7 @@ func (endpoint *TCPEndpoint) Dispatch() (TCPDispatch, bool) {
 					request.handle,
 					tcpRequestTerminal,
 				)
-				_ = request.group.FailTransport()
+				_ = endpoint.failRequestSchedulingLocked(request)
 			}
 			continue
 		}
@@ -983,7 +1195,7 @@ func (endpoint *TCPEndpoint) Dispatch() (TCPDispatch, bool) {
 				tcpRequestRetryable,
 				true,
 			)
-			_ = request.group.FailTransport()
+			_ = endpoint.failRequestSchedulingLocked(request)
 			continue
 		}
 		dispatchID := endpoint.nextDispatchID
@@ -1035,7 +1247,7 @@ func (endpoint *TCPEndpoint) pruneExpired(
 	fields := make([]tcpEventFields, 0, len(expired))
 	for _, request := range expired {
 		setTCPRequestLifecycle(request.handle, tcpRequestTerminal)
-		_ = request.group.FailTransport()
+		_ = endpoint.failRequestSchedulingLocked(request)
 		fields = append(fields, endpoint.requestEventFields(request))
 	}
 	return fields
@@ -1076,24 +1288,42 @@ func (endpoint *TCPEndpoint) Write(
 			-1,
 		)
 	}
+	writeContext, writeCancel := context.WithCancel(ctx)
+	writeDone := make(chan struct{})
 	request.phase = endpointRequestWriting
+	request.writeCancel = writeCancel
+	request.writeDone = writeDone
 	endpoint.mu.Unlock()
+	defer func() {
+		writeCancel()
+		close(writeDone)
+	}()
 	owner := connection.lease.ownerForEndpoint()
 	if owner == nil {
-		_ = request.group.FailTransport()
+		_ = endpoint.failRequest(request)
 		endpoint.finishRequestRetryable(
 			request.handle.requestID,
 			true,
 		)
 		return OwnerTransition{}, invalidConnectionHandle()
 	}
-	reservation, err := owner.reserveReadUntil(
-		request.unitID,
-		request.group.PhysicalRequest(),
-		request.operationDeadline,
-	)
+	var reservation TCPReservation
+	var err error
+	if request.isDeviceID() {
+		reservation, err = owner.reserveDeviceIDUntil(
+			request.unitID,
+			request.deviceID,
+			request.operationDeadline,
+		)
+	} else {
+		reservation, err = owner.reserveReadUntil(
+			request.unitID,
+			request.group.PhysicalRequest(),
+			request.operationDeadline,
+		)
+	}
 	if err != nil {
-		_ = request.group.FailTransport()
+		_ = endpoint.failRequest(request)
 		if owner.Closed() {
 			transition, closeErr := connection.transport.closeTerminal()
 			endpoint.finishRequestRetryable(
@@ -1109,21 +1339,23 @@ func (endpoint *TCPEndpoint) Write(
 		)
 		return OwnerTransition{}, err
 	}
-	if err := request.group.BindReservation(reservation); err != nil {
-		_ = owner.CancelBeforeWrite(reservation)
-		_ = request.group.FailTransport()
-		endpoint.finishRequestRetryable(
-			request.handle.requestID,
-			false,
-		)
-		return OwnerTransition{}, err
+	if !request.isDeviceID() {
+		if err := request.group.BindReservation(reservation); err != nil {
+			_ = owner.CancelBeforeWrite(reservation)
+			_ = endpoint.failRequest(request)
+			endpoint.finishRequestRetryable(
+				request.handle.requestID,
+				false,
+			)
+			return OwnerTransition{}, err
+		}
 	}
 	endpoint.mu.Lock()
 	current := endpoint.requests[request.handle.requestID]
 	if current != request {
 		endpoint.mu.Unlock()
 		_ = owner.CancelBeforeWrite(reservation)
-		_ = request.group.FailTransport()
+		_ = endpoint.failRequest(request)
 		return OwnerTransition{}, protocolError(
 			ErrorInvalidRequest,
 			0,
@@ -1140,15 +1372,28 @@ func (endpoint *TCPEndpoint) Write(
 	}] = request.handle.requestID
 	writeFields := endpoint.requestEventFieldsLocked(request)
 	endpoint.mu.Unlock()
-	transition, err := connection.transport.writeCoalescedUntil(
-		ctx,
-		request.group,
-		request.operationDeadline,
-		writeFields,
-	)
+	var transition OwnerTransition
+	if request.isDeviceID() {
+		transition, err = connection.transport.writeReservationUntil(
+			writeContext,
+			reservation,
+			request.operationDeadline,
+			request.handle.requestID,
+		)
+	} else {
+		transition, err = connection.transport.writeCoalescedUntil(
+			writeContext,
+			request.group,
+			request.operationDeadline,
+			writeFields,
+		)
+	}
 	if !endpoint.timelineAvailable() {
 		endpoint.disable("event_sequence_exhausted")
 		return transition, errors.Join(err, eventSequenceError())
+	}
+	if endpoint.afterWrite != nil {
+		endpoint.afterWrite()
 	}
 	endpoint.mu.Lock()
 	current = endpoint.requests[request.handle.requestID]
@@ -1175,6 +1420,7 @@ func (endpoint *TCPEndpoint) Write(
 		}
 		endpoint.removeRequestLocked(request.handle.requestID)
 		endpoint.mu.Unlock()
+		err = errors.Join(err, endpoint.failRequest(request))
 		if retryableTransportFailure(err) &&
 			endpoint.config.Clock.Now() < request.operationDeadline {
 			endpoint.setRequestRetryState(
@@ -1205,7 +1451,7 @@ func (endpoint *TCPEndpoint) Write(
 	if !ok {
 		endpoint.removeRequestLocked(request.handle.requestID)
 		endpoint.mu.Unlock()
-		_ = request.group.FailTransport()
+		_ = endpoint.failRequest(request)
 		closeTransition, closeErr := connection.transport.closeTerminal()
 		transition = mergeOwnerTransitions(transition, closeTransition)
 		endpoint.dropConnection(request.connectionID)
@@ -1219,6 +1465,7 @@ func (endpoint *TCPEndpoint) Write(
 	}
 	request.responseDeadline = responseDeadline
 	request.phase = endpointRequestWaiting
+	request.writeCancel = nil
 	endpoint.mu.Unlock()
 	connection.transport.requestEarlierReadDeadline(responseDeadline)
 	return transition, nil
@@ -1286,6 +1533,147 @@ func (endpoint *TCPEndpoint) dispatchLocked(
 		return nil, nil, false
 	}
 	return request, connection, true
+}
+
+func deviceIDSegmentsWithinLimits(
+	segments []DeviceIDSegment,
+	limits DeviceIDLimits,
+) bool {
+	if len(segments) == 0 || len(segments) > limits.MaxSegments {
+		return false
+	}
+	objects := 0
+	valueBytes := 0
+	for _, segment := range segments {
+		for _, object := range segment.Objects() {
+			objects++
+			if objects > limits.MaxObjects ||
+				len(object.Value) > limits.MaxValueBytes-valueBytes {
+				return false
+			}
+			valueBytes += len(object.Value)
+		}
+	}
+	return true
+}
+
+func (endpoint *TCPEndpoint) requeueDeviceIDContinuation(
+	request *endpointRequest,
+	next DeviceIDRequest,
+) error {
+	endpoint.scheduleMu.Lock()
+	defer endpoint.scheduleMu.Unlock()
+	if err := endpoint.scheduler.Complete(
+		request.handle.requestID,
+	); err != nil {
+		return err
+	}
+	if err := endpoint.scheduler.Enqueue(ScheduledRequest{
+		RequestID: request.handle.requestID,
+		Key: AdmissionKey{
+			AuthorizationScope: request.authorizationScope,
+			UnitID:             request.unitID,
+		},
+		DeadlineOffset: int64(request.operationDeadline),
+	}); err != nil {
+		return err
+	}
+	endpoint.mu.Lock()
+	if endpoint.requests[request.handle.requestID] != request ||
+		endpoint.connections[request.connectionID] == nil {
+		endpoint.mu.Unlock()
+		endpoint.scheduler.CancelQueued(request.handle.requestID)
+		return context.Canceled
+	}
+	delete(endpoint.physical, endpointPhysicalKey{
+		connectionID:      request.connectionID,
+		physicalRequestID: request.physicalRequestID,
+	})
+	request.deviceID = next
+	request.phase = endpointRequestQueued
+	request.dispatchID = 0
+	request.physicalRequestID = 0
+	request.transactionID = 0
+	request.responseDeadline = 0
+	endpoint.mu.Unlock()
+	return nil
+}
+
+func (endpoint *TCPEndpoint) acceptDeviceIDResponse(
+	request *endpointRequest,
+	response WireResponse,
+) (*TCPDeviceIDCompletion, bool, error) {
+	endpoint.mu.Lock()
+	current := endpoint.requests[request.handle.requestID]
+	endpoint.mu.Unlock()
+	if current != request {
+		return nil, false, context.Canceled
+	}
+	segment, ok := response.DeviceIDSegment()
+	if !ok {
+		return nil, false, protocolError(
+			ErrorInvalidRequest,
+			FunctionEncapsulatedInterface,
+			0,
+			"device_id_segment",
+			-1,
+		)
+	}
+	request.deviceIDSegments = append(
+		request.deviceIDSegments,
+		segment,
+	)
+	if !deviceIDSegmentsWithinLimits(
+		request.deviceIDSegments,
+		request.deviceIDLimits,
+	) {
+		return nil, false, protocolError(
+			ErrorInvalidRange,
+			FunctionEncapsulatedInterface,
+			0,
+			"aggregate_limit",
+			-1,
+		)
+	}
+	if segment.MoreFollows() {
+		next, err := NextDeviceIDRequest(segment)
+		if err != nil {
+			return nil, false, err
+		}
+		if err := endpoint.requeueDeviceIDContinuation(
+			request,
+			next,
+		); err != nil {
+			return nil, false, err
+		}
+		return nil, true, nil
+	}
+
+	var result DeviceIDResult
+	var err error
+	if request.deviceIDInitial.Access() == DeviceIDIndividual {
+		result = DeviceIDResult{
+			Conformity: segment.Conformity(),
+			Objects:    segment.Objects(),
+			Segments:   append([]DeviceIDSegment(nil), segment),
+		}
+	} else {
+		result, err = AggregateDeviceID(
+			request.deviceIDInitial,
+			request.deviceIDSegments,
+			request.deviceIDLimits,
+		)
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	if err := endpoint.failRequest(request); err != nil {
+		return nil, false, err
+	}
+	return &TCPDeviceIDCompletion{
+		RequestID: request.handle.requestID,
+		Result:    result,
+	}, false, nil
 }
 
 // Read consumes one socket chunk, correlates frames, and replays exact views.
@@ -1454,6 +1842,7 @@ func (endpoint *TCPEndpoint) Read(
 			handle.connectionID,
 			response.PhysicalRequestID(),
 		)
+		retiredResponse := false
 		fields := tcpEventFields{
 			ConnectionID:        handle.connectionID,
 			TransportGeneration: handle.generation,
@@ -1484,6 +1873,7 @@ func (endpoint *TCPEndpoint) Read(
 			handle.connectionID,
 			response.PhysicalRequestID(),
 		); retired {
+			retiredResponse = true
 			retiredFields.WireResponseID = response.WireResponseID()
 			retiredFields.DiagnosticFrameID = response.DiagnosticFrameID()
 			retiredFields.ReceivedFunction =
@@ -1492,6 +1882,9 @@ func (endpoint *TCPEndpoint) Read(
 				hex.EncodeToString(response.Bytes())
 			retiredFields.WireOutcome = response.Outcome()
 			fields = retiredFields
+		}
+		if endpoint.beforeOutcome != nil {
+			endpoint.beforeOutcome()
 		}
 		endpoint.outcomeMu.Lock()
 		endpoint.timeline.record(TCPEventResponseReceive, fields)
@@ -1512,7 +1905,7 @@ func (endpoint *TCPEndpoint) Read(
 			endpoint.backoff.ValidCorrelatedResponse()
 		}
 		if request == nil {
-			if response.Deliverable() {
+			if response.Deliverable() && !retiredResponse {
 				replayErr = errors.Join(
 					replayErr,
 					protocolError(
@@ -1533,11 +1926,44 @@ func (endpoint *TCPEndpoint) Read(
 				endpoint.outcomeMu.Unlock()
 				continue
 			}
-			views, err := request.group.ReplaySuccessfulResponse(response)
-			batch.Views = append(batch.Views, views...)
-			replayErr = errors.Join(replayErr, err)
+			if request.isDeviceID() {
+				completion, continued, err :=
+					endpoint.acceptDeviceIDResponse(request, response)
+				replayErr = errors.Join(replayErr, err)
+				if err != nil {
+					replayErr = errors.Join(
+						replayErr,
+						endpoint.failRequest(request),
+					)
+				}
+				if continued {
+					endpoint.outcomeMu.Unlock()
+					continue
+				}
+				if completion != nil {
+					batch.DeviceIDs = append(
+						batch.DeviceIDs,
+						*completion,
+					)
+				}
+			} else {
+				views, err :=
+					request.group.ReplaySuccessfulResponse(response)
+				batch.Views = append(batch.Views, views...)
+				replayErr = errors.Join(replayErr, err)
+			}
 		case WireProtocolException, WireMalformedResponse:
-			replayErr = errors.Join(replayErr, request.group.Fail(response))
+			if request.isDeviceID() {
+				replayErr = errors.Join(
+					replayErr,
+					endpoint.failRequest(request),
+				)
+			} else {
+				replayErr = errors.Join(
+					replayErr,
+					request.group.Fail(response),
+				)
+			}
 		}
 		endpoint.finishRequest(request.handle.requestID)
 		endpoint.outcomeMu.Unlock()
@@ -1630,7 +2056,7 @@ func (endpoint *TCPEndpoint) failPhysical(
 		fields.Detail = "tcp_response_wait_tombstone"
 	}
 	endpoint.timeline.record(kind, fields)
-	return request.group.FailTransport()
+	return endpoint.failRequest(request)
 }
 
 func (endpoint *TCPEndpoint) finishRequest(requestID uint64) {
@@ -1855,7 +2281,7 @@ func (endpoint *TCPEndpoint) dropConnection(connectionID uint64) {
 			lifecycle,
 			lifecycle == tcpRequestRetryable,
 		)
-		_ = request.group.FailTransport()
+		_ = endpoint.failRequest(request)
 	}
 }
 
@@ -1954,6 +2380,16 @@ func (endpoint *TCPEndpoint) CancelLogical(
 			0,
 			0,
 			"tcp_request_handle",
+			-1,
+		)
+	}
+	if request.isDeviceID() {
+		endpoint.mu.Unlock()
+		return CoalescedTransition{}, protocolError(
+			ErrorInvalidRequest,
+			FunctionEncapsulatedInterface,
+			0,
+			"logical_view_id",
 			-1,
 		)
 	}
@@ -2091,6 +2527,113 @@ func (endpoint *TCPEndpoint) Cancel(handle TCPRequestHandle) error {
 			-1,
 		)
 	}
+	if request.isDeviceID() {
+		endpoint.mu.Unlock()
+		endpoint.outcomeMu.Lock()
+		defer endpoint.outcomeMu.Unlock()
+		endpoint.mu.Lock()
+		request = endpoint.requests[handle.requestID]
+		if request == nil ||
+			!request.isDeviceID() ||
+			request.handle.deadlineOffset != handle.deadlineOffset {
+			endpoint.mu.Unlock()
+			return protocolError(
+				ErrorInvalidRequest,
+				FunctionEncapsulatedInterface,
+				0,
+				"tcp_request_handle",
+				-1,
+			)
+		}
+		if request.phase == endpointRequestWriting {
+			cancelWrite := request.writeCancel
+			writeDone := request.writeDone
+			request.cancelPending = true
+			endpoint.mu.Unlock()
+			if cancelWrite == nil || writeDone == nil {
+				return protocolError(
+					ErrorInvalidRequest,
+					FunctionEncapsulatedInterface,
+					0,
+					"tcp_request_lifecycle",
+					-1,
+				)
+			}
+			cancelWrite()
+			<-writeDone
+			endpoint.mu.Lock()
+			request = endpoint.requests[handle.requestID]
+			if request == nil {
+				endpoint.mu.Unlock()
+				return nil
+			}
+			if !request.isDeviceID() ||
+				request.handle.deadlineOffset != handle.deadlineOffset ||
+				request.phase != endpointRequestWaiting {
+				endpoint.mu.Unlock()
+				return protocolError(
+					ErrorInvalidRequest,
+					FunctionEncapsulatedInterface,
+					0,
+					"tcp_request_lifecycle",
+					-1,
+				)
+			}
+		}
+		connection := endpoint.connections[request.connectionID]
+		fields := endpoint.requestEventFieldsLocked(request)
+		waiting := request.phase == endpointRequestWaiting
+		reservation := TCPReservation{}
+		if waiting && connection != nil {
+			reservation = TCPReservation{
+				owner:             connection.lease.ownerForEndpoint(),
+				transactionID:     request.transactionID,
+				physicalRequestID: request.physicalRequestID,
+				generation:        request.transportGeneration,
+				deadlineOffset:    request.responseDeadline,
+			}
+			endpoint.retiredPhysical[endpointPhysicalKey{
+				connectionID:      request.connectionID,
+				physicalRequestID: request.physicalRequestID,
+			}] = fields
+		}
+		endpoint.removeRequestLocked(handle.requestID)
+		endpoint.mu.Unlock()
+
+		var cancelErr error
+		closeConnection := false
+		if waiting && reservation.owner != nil {
+			transition, err := reservation.owner.AbandonAfterWrite(
+				reservation,
+				AbandonCancellation,
+			)
+			var protocolErr *ProtocolError
+			if errors.As(err, &protocolErr) &&
+				protocolErr.Field == "reservation_state" {
+				err = nil
+			}
+			cancelErr = errors.Join(cancelErr, err)
+			closeConnection = transition.CloseConnection()
+		}
+		cancelErr = errors.Join(
+			cancelErr,
+			endpoint.failRequest(request),
+		)
+		setTCPRequestLifecycle(handle, tcpRequestTerminal)
+		endpoint.timeline.record(TCPEventCallerCancellation, fields)
+		if waiting {
+			fields.Detail = "tcp_response_wait_tombstone"
+			endpoint.timeline.record(TCPEventQuarantineTransition, fields)
+		}
+		if closeConnection && connection != nil {
+			_, closeErr := connection.transport.closeTerminal()
+			cancelErr = errors.Join(cancelErr, closeErr)
+			endpoint.dropConnection(request.connectionID)
+		} else {
+			endpoint.refreshConnectionReadDeadline(request.connectionID)
+		}
+		return cancelErr
+	}
 	states := request.group.DependentStates()
 	endpoint.mu.Unlock()
 	logicalViewIDs := make([]uint64, 0, len(states))
@@ -2213,6 +2756,9 @@ func (endpoint *TCPEndpoint) Retry(
 	pollGeneration := handle.backoff.pollGeneration
 	deadlineIdentity := handle.backoff.deadlineIdentity
 	reads := append([]TCPLogicalRead(nil), handle.backoff.reads...)
+	deviceID := handle.backoff.deviceID
+	deviceIDLimits := handle.backoff.deviceIDLimits
+	deviceIDRetry := deviceID.access != 0
 	handle.backoff.mu.Unlock()
 	endpoint.trackRetryableState(handle, tcpRequestRetrying)
 
@@ -2270,17 +2816,24 @@ func (endpoint *TCPEndpoint) Retry(
 		return eventSequenceError()
 	}
 	endpoint.scheduleMu.Lock()
-	group, err := endpoint.scheduler.ScheduleCoalesced(
-		ScheduledRequest{
-			RequestID: handle.requestID,
-			Key: AdmissionKey{
-				AuthorizationScope: authorizationScope,
-				UnitID:             unitID,
-			},
-			DeadlineOffset: int64(effectiveDeadline),
+	scheduledRequest := ScheduledRequest{
+		RequestID: handle.requestID,
+		Key: AdmissionKey{
+			AuthorizationScope: authorizationScope,
+			UnitID:             unitID,
 		},
-		intents,
-	)
+		DeadlineOffset: int64(effectiveDeadline),
+	}
+	var group *CoalescedRead
+	var err error
+	if deviceIDRetry {
+		err = endpoint.scheduler.Enqueue(scheduledRequest)
+	} else {
+		group, err = endpoint.scheduler.ScheduleCoalesced(
+			scheduledRequest,
+			intents,
+		)
+	}
 	if err != nil {
 		endpoint.scheduleMu.Unlock()
 		fields.Detail = "retry_rejected"
@@ -2288,10 +2841,12 @@ func (endpoint *TCPEndpoint) Retry(
 		endpoint.restoreRetryLifecycle(handle)
 		return err
 	}
-	if endpoint.afterSchedule != nil {
+	if !deviceIDRetry && endpoint.afterSchedule != nil {
 		endpoint.afterSchedule()
 	}
-	group.setOperationDeadline(effectiveDeadline)
+	if group != nil {
+		group.setOperationDeadline(effectiveDeadline)
+	}
 	endpoint.mu.Lock()
 	handle.backoff.mu.Lock()
 	currentConnection, current := endpoint.connectionLocked(connectionHandle)
@@ -2305,7 +2860,11 @@ func (endpoint *TCPEndpoint) Retry(
 		lifecycle := handle.backoff.lifecycle
 		handle.backoff.mu.Unlock()
 		endpoint.mu.Unlock()
-		_ = group.FailTransport()
+		if group != nil {
+			_ = group.FailTransport()
+		} else {
+			endpoint.scheduler.CancelQueued(handle.requestID)
+		}
 		endpoint.scheduleMu.Unlock()
 		endpoint.restoreRetryLifecycle(handle)
 		fields.Detail = "retry_stale_connection"
@@ -2329,6 +2888,9 @@ func (endpoint *TCPEndpoint) Retry(
 		pollGeneration:      pollGeneration,
 		deadlineIdentity:    deadlineIdentity,
 		group:               group,
+		deviceID:            deviceID,
+		deviceIDInitial:     deviceID,
+		deviceIDLimits:      deviceIDLimits,
 		operationDeadline:   effectiveDeadline,
 		phase:               endpointRequestQueued,
 	}
@@ -2340,7 +2902,9 @@ func (endpoint *TCPEndpoint) Retry(
 	handle.backoff.mu.Unlock()
 	endpoint.mu.Unlock()
 	endpoint.scheduleMu.Unlock()
-	endpoint.timeline.recordCoalescing(fields, len(reads))
+	if !deviceIDRetry {
+		endpoint.timeline.recordCoalescing(fields, len(reads))
+	}
 	fields.Detail = "retry_admitted"
 	endpoint.timeline.record(TCPEventAdmission, fields)
 	endpoint.timeline.record(TCPEventRequestTimerArm, fields)
@@ -2677,8 +3241,7 @@ func (endpoint *TCPEndpoint) requestEventFields(
 	if request == nil {
 		return tcpEventFields{}
 	}
-	physical := request.group.PhysicalRequest()
-	return tcpEventFields{
+	fields := tcpEventFields{
 		ConnectionID:        request.connectionID,
 		TransportGeneration: request.transportGeneration,
 		RequestID:           request.handle.requestID,
@@ -2688,10 +3251,6 @@ func (endpoint *TCPEndpoint) requestEventFields(
 		AuthorizationScope:  request.authorizationScope,
 		PollGeneration:      request.pollGeneration,
 		DeadlineIdentity:    request.deadlineIdentity,
-		RequestedFunction:   physical.Function(),
-		LogicalTable:        physical.Table(),
-		PhysicalOffset:      physical.Offset(),
-		PhysicalQuantity:    physical.Quantity(),
 		DeadlineOffset: func() time.Duration {
 			if request.responseDeadline > 0 {
 				return request.responseDeadline
@@ -2699,4 +3258,14 @@ func (endpoint *TCPEndpoint) requestEventFields(
 			return request.handle.deadlineOffset
 		}(),
 	}
+	if request.isDeviceID() {
+		fields.RequestedFunction = FunctionEncapsulatedInterface
+		return fields
+	}
+	physical := request.group.PhysicalRequest()
+	fields.RequestedFunction = physical.Function()
+	fields.LogicalTable = physical.Table()
+	fields.PhysicalOffset = physical.Offset()
+	fields.PhysicalQuantity = physical.Quantity()
+	return fields
 }

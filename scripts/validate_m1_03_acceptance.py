@@ -136,6 +136,8 @@ EXPECTED_TEST_GO_FILES = {
     "tcp_pool_test.go",
     "tcp_scheduler_test.go",
     "tcp_transport_test.go",
+    "tcp_device_id_endpoint_test.go",
+    "transport_conformance_test.go",
 }
 FORBIDDEN_COMPILED_FIELDS = (
     "CgoFiles",
@@ -175,7 +177,7 @@ CI_WORKFLOW_SHA256 = (
     "af8ef40d498d5f29dd67afb573d6082e8290e1d03820634e8acc64b9b171fbf5"
 )
 CI_LOCAL_SHA256 = (
-    "22a6c2e861d066e89ff3adb551ab73eeb3d3a652eccd731c25c6e5d42f5e4589"
+    "ba14b81cb6ea7d3274b9a38bbe746488aae80fb97109d49a6fdd3dfbeddda295"
 )
 TRANSPORT_OVERRIDE_SOURCE = {
     "baseline_matrix": "T01..T88",

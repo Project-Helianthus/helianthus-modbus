@@ -56,6 +56,13 @@ else
   python3 scripts/validate_m1_03_acceptance.py --candidate
 fi
 
+echo "==> FMV3-M1-04 transport conformance matrix"
+if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
+  python3 scripts/validate_m1_04_acceptance.py
+else
+  python3 scripts/validate_m1_04_acceptance.py --candidate
+fi
+
 echo "==> scope policy mutation tests"
 python3 -m unittest discover -s tests -p 'test_*.py'
 

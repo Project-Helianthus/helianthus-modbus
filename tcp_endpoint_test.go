@@ -3048,12 +3048,27 @@ func TestTCPEndpointPreWriteCancellationShrinksReservedPhysicalRead(
 		)
 	}
 	required := map[TCPTransportEventKind]bool{
+		TCPEventRequestTimerArm: false,
 		TCPEventWritePrepared:   false,
 		TCPEventWriteInvocation: false,
 		TCPEventWriteReturn:     false,
 		TCPEventTransmitResult:  false,
 	}
 	for _, event := range sink.snapshot() {
+		if event.Kind == TCPEventRequestTimerArm {
+			required[event.Kind] = true
+			if event.RequestedFunction != 0 ||
+				event.LogicalTable != "" ||
+				event.PhysicalOffset != 0 ||
+				event.PhysicalQuantity != 0 ||
+				event.RawADUHex != "" {
+				t.Fatalf(
+					"pre-bound timer published mutable physical range: %#v",
+					event,
+				)
+			}
+			continue
+		}
 		if _, ok := required[event.Kind]; !ok {
 			continue
 		}

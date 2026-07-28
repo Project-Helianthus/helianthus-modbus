@@ -926,6 +926,12 @@ func (transport *TCPTransport) writeCoalescedUntil(
 			-1,
 		)
 	}
+	timerFields := fields
+	timerFields.RequestedFunction = 0
+	timerFields.LogicalTable = ""
+	timerFields.PhysicalOffset = 0
+	timerFields.PhysicalQuantity = 0
+	timerFields.RawADUHex = ""
 	operation := newTCPTransportOperation(
 		transport,
 		ctx,
@@ -934,7 +940,7 @@ func (transport *TCPTransport) writeCoalescedUntil(
 		TCPEventRequestTimerFire,
 		TCPEventWriteInvocation,
 		TCPEventWriteReturn,
-		fields,
+		timerFields,
 	)
 	defer operation.stopAndJoin()
 	if err := acquireOperationGate(operation, transport.writeGate); err != nil {

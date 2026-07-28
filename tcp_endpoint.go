@@ -1981,9 +1981,6 @@ func (endpoint *TCPEndpoint) CancelLogical(
 	}
 	handle.backoff.reads = activeReads
 	handle.backoff.mu.Unlock()
-	if !transition.CloseConnection() {
-		endpoint.refreshConnectionReadDeadline(request.connectionID)
-	}
 	if transition.AbandonTransport() {
 		endpoint.mu.Lock()
 		endpoint.retiredPhysical[endpointPhysicalKey{
@@ -1999,6 +1996,9 @@ func (endpoint *TCPEndpoint) CancelLogical(
 		if transition.CloseConnection() {
 			endpoint.dropConnection(request.connectionID)
 		}
+	}
+	if !transition.CloseConnection() {
+		endpoint.refreshConnectionReadDeadline(request.connectionID)
 	}
 	return transition, nil
 }

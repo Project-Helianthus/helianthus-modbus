@@ -223,7 +223,7 @@
     "pdu_test.go": "56a970af945842aaa570232d7bfa196ac90619a5cf6589263a5c7481040b1f23",
     "tcp_adu_test.go": "f412ee8bfa2d2b352485d55291991e2dcbf100dcaf6292f5b61a4f0c1a8de701",
     "tcp_coalescing_test.go": "e00274ac79a7a6c354b6d2c2aacc4fa0435507561063c34155b4bfbfd0f26415",
-    "tcp_endpoint_test.go": "b39451e8bcabe894c290cc445b6b3bcfcb0c24670047a30b6ac618a749da4c9b",
+    "tcp_endpoint_test.go": "3e373653cf4a1fb17a5a0abc19cc58bf959f4bc1e0dcb3f29fbdca72ca78d839",
     "tcp_owner_test.go": "cd3d6e2c5a3742844f449df1615ef88611353249def1d99fd550567d834e943a",
     "tcp_pool_test.go": "c855455fdb7a3dc9c186d7e14592385d598f40cf8f699ecb8af518ed07824879",
     "tcp_scheduler_test.go": "52a3715e2a9e0f47ea583a123d6e1bb7659ccf239e3b3197a160743a5a7bea2d",

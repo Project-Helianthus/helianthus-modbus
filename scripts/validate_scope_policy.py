@@ -45,7 +45,7 @@ EXPECTED_POLICY = {
             "d57ec064b99bdfe49d12e608fafc5883e84eec8037aa6ee485602424e2c9be7d"
         ),
         "tcp_endpoint.go": (
-            "28ee5217b93240ee1b8a0056da9411d823c79adcf7116579cbf08595855fcffb"
+            "f0d46215dd3e5639695551178da0ae9fdfee6a5f3467922796316a1148918b15"
         ),
         "tcp_owner.go": (
             "b062e796fb3c60c9dd3b6716af6271543fc394b4646af52990cfc1b3d8032b00"
@@ -57,7 +57,7 @@ EXPECTED_POLICY = {
             "d30b7154b9762380dc69bb334436abf62cde45273310a829c08ed2fac9b27252"
         ),
         "tcp_transport.go": (
-            "baf5df1922b15d26b0bc56812402d04c369e988e0c08ee3496fc541ae4a304a5"
+            "0b95a1311ad5df7c55aff0d9db9543eb46a9ccde205b2461f5b4f618d21ef2ab"
         ),
     },
     "trusted_go_tool_sha256": {

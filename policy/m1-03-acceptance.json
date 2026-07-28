@@ -176,7 +176,9 @@
       "repository": "Project-Helianthus/helianthus-modbus",
       "number": 10,
       "base": "main",
-      "base_sha": "79f9c6da6efd5be9f3e31ddf62720c1a3d0bf3e7"
+      "base_sha": "79f9c6da6efd5be9f3e31ddf62720c1a3d0bf3e7",
+      "head_sha": "4f8e69dad3c57c798f3eb3d74f7382f3ae9d685b",
+      "merge_sha": "fd7524fee3d4ea808a67185341a3bf13f6d151cd"
     },
     "CI": {
       "commands": [

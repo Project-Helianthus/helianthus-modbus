@@ -228,6 +228,33 @@ def ensure_git_object(root: Path, commit: str) -> None:
         )
 
 
+def ensure_full_history(root: Path) -> None:
+    shallow = subprocess.run(
+        ["git", "rev-parse", "--is-shallow-repository"],
+        cwd=root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if shallow.returncode != 0:
+        raise AcceptanceError(
+            f"cannot inspect repository depth: {shallow.stderr.strip()}"
+        )
+    if shallow.stdout.strip() == "false":
+        return
+    fetched = subprocess.run(
+        ["git", "fetch", "--unshallow", "--no-tags", "origin"],
+        cwd=root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if fetched.returncode != 0:
+        raise AcceptanceError(
+            f"cannot materialize checkout ancestry: {fetched.stderr.strip()}"
+        )
+
+
 def fetch_reviewed_pr_head(
     root: Path,
     pull_number: int,
@@ -327,6 +354,7 @@ def validate_reviewed_revision(
         raise AcceptanceError("reviewed PR evidence is invalid JSON") from exc
     reviewed_head = str(evidence.get("reviewed_head_sha", ""))
     squash_merge = str(evidence.get("squash_merge_sha", ""))
+    ensure_full_history(root)
     reviewed_ref = fetch_reviewed_pr_head(
         root,
         pull_number,
@@ -352,12 +380,22 @@ def validate_reviewed_revision(
     )
 
 
+def go_tool_context(root: Path) -> tuple[Path, Path, dict[str, str]]:
+    tool_root = Path(__file__).resolve().parents[1]
+    target_root = root.resolve()
+    return tool_root, target_root, {
+        **os.environ,
+        "GOWORK": "off",
+        "PWD": str(tool_root),
+    }
+
+
 def test_evidence(root: Path) -> dict[str, object]:
-    tool = Path(__file__).resolve().parent / "acceptance_evidence"
+    tool_root, target_root, environment = go_tool_context(root)
     result = subprocess.run(
-        ["go", "run", str(tool), str(root)],
-        cwd=tool.parents[1],
-        env={**os.environ, "GOWORK": "off"},
+        ["go", "run", "./scripts/acceptance_evidence", str(target_root)],
+        cwd=tool_root,
+        env=environment,
         check=False,
         capture_output=True,
         text=True,

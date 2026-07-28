@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -20,6 +21,92 @@ def event(action: str, test: str) -> str:
 
 
 class M102AcceptanceTests(unittest.TestCase):
+    def test_go_tool_context_normalizes_symlinked_checkout(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            link = Path(temp) / "checkout"
+            link.symlink_to(ROOT, target_is_directory=True)
+            tool_root, target_root, environment = validator.go_tool_context(link)
+            self.assertEqual(tool_root, ROOT.resolve())
+            self.assertEqual(target_root, ROOT.resolve())
+            self.assertEqual(environment["PWD"], str(tool_root))
+            self.assertEqual(environment["GOWORK"], "off")
+
+    def test_shallow_checkout_materializes_merge_ancestry(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "source"
+            remote = root / "remote.git"
+            checkout = root / "checkout"
+            subprocess.run(
+                ["git", "init", "-q", "--initial-branch=main", source],
+                check=True,
+            )
+            subprocess.run(
+                ["git", "-C", source, "config", "user.name", "Fixture"],
+                check=True,
+            )
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    source,
+                    "config",
+                    "user.email",
+                    "fixture@example.invalid",
+                ],
+                check=True,
+            )
+            fixture = source / "fixture.txt"
+            fixture.write_text("base\n", encoding="utf-8")
+            subprocess.run(["git", "-C", source, "add", "."], check=True)
+            subprocess.run(
+                ["git", "-C", source, "commit", "-qm", "base"],
+                check=True,
+            )
+            fixture.write_text("merge\n", encoding="utf-8")
+            subprocess.run(
+                ["git", "-C", source, "commit", "-qam", "merge"],
+                check=True,
+            )
+            merge_sha = subprocess.run(
+                ["git", "-C", source, "rev-parse", "HEAD"],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+            subprocess.run(
+                ["git", "-C", source, "switch", "-qc", "feature"],
+                check=True,
+            )
+            fixture.write_text("feature\n", encoding="utf-8")
+            subprocess.run(
+                ["git", "-C", source, "commit", "-qam", "feature"],
+                check=True,
+            )
+            subprocess.run(
+                ["git", "clone", "-q", "--bare", source, remote],
+                check=True,
+            )
+            subprocess.run(
+                [
+                    "git",
+                    "clone",
+                    "-q",
+                    "--depth=1",
+                    "--branch=feature",
+                    f"file://{remote}",
+                    checkout,
+                ],
+                check=True,
+            )
+            self.assertFalse(
+                validator.git_is_ancestor(checkout, merge_sha, "HEAD")
+            )
+            validator.ensure_full_history(checkout)
+            self.assertTrue(
+                validator.git_is_ancestor(checkout, merge_sha, "HEAD")
+            )
+
     def reviewed_revision_fixture(
         self,
     ) -> tuple[dict[str, object], dict[str, object]]:

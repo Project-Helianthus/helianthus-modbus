@@ -229,3 +229,129 @@ func TestRTUFrameDecoderRequiresCompleteInterFrameIdle(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestRTUFrameDecoderCRCFailureKeepsPDUPrivate(t *testing.T) {
+	timing := rtuTestTiming(t, 9600)
+	decoder, err := NewRTUFrameDecoder(timing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	frame := rtuTestFrame(1, 0x03, 0x02, 0, 1)
+	frame[len(frame)-1] ^= 0xff
+	offset := time.Duration(0)
+	for index, value := range frame {
+		if index != 0 {
+			offset += timing.CharacterTime()
+		}
+		if err := decoder.FeedByte(offset, value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	adu, err := decoder.EndFrame(offset + timing.InterFrame())
+	if err == nil {
+		t.Fatal("CRC-invalid frame accepted")
+	}
+	if !bytes.Equal(adu.Bytes(), frame) ||
+		adu.UnitID() != 0 ||
+		len(adu.PDU()) != 0 {
+		t.Fatalf("CRC-invalid ADU = %#v", adu)
+	}
+}
+
+func TestRTUFrameDecoderRejectedSequenceRequiresT35Resynchronization(
+	t *testing.T,
+) {
+	for _, testCase := range []struct {
+		name   string
+		poison func(*testing.T, *RTUFrameDecoder, RTUTiming) time.Duration
+	}{
+		{
+			name: "inter-character gap",
+			poison: func(
+				t *testing.T,
+				decoder *RTUFrameDecoder,
+				timing RTUTiming,
+			) time.Duration {
+				t.Helper()
+				if err := decoder.FeedByte(0, 1); err != nil {
+					t.Fatal(err)
+				}
+				offset := timing.InterCharacter() + 1
+				if err := decoder.FeedByte(offset, 2); err == nil {
+					t.Fatal("inter-character violation accepted")
+				}
+				return offset
+			},
+		},
+		{
+			name: "buffer overflow",
+			poison: func(
+				t *testing.T,
+				decoder *RTUFrameDecoder,
+				timing RTUTiming,
+			) time.Duration {
+				t.Helper()
+				offset := time.Duration(0)
+				for range MaxRTUADUSize {
+					if err := decoder.FeedByte(offset, 1); err != nil {
+						t.Fatal(err)
+					}
+					offset += timing.CharacterTime()
+				}
+				if err := decoder.FeedByte(offset, 2); err == nil {
+					t.Fatal("overflowing frame accepted")
+				}
+				return offset
+			},
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			timing := rtuTestTiming(t, 9600)
+			decoder, err := NewRTUFrameDecoder(timing)
+			if err != nil {
+				t.Fatal(err)
+			}
+			offset := testCase.poison(t, decoder, timing)
+			frame := rtuTestFrame(1, 0x03, 0x02, 0, 1)
+			offset += timing.CharacterTime()
+			if err := decoder.FeedByte(offset, frame[0]); err == nil {
+				t.Fatal("byte accepted before t3.5 resynchronization")
+			}
+			offset += timing.InterFrame()
+			for index, value := range frame {
+				if index != 0 {
+					offset += timing.CharacterTime()
+				}
+				if err := decoder.FeedByte(offset, value); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, err := decoder.EndFrame(
+				offset + timing.InterFrame(),
+			); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestRTUFrameDecoderClockRegressionPreservesResyncAnchor(t *testing.T) {
+	timing := rtuTestTiming(t, 9600)
+	decoder, err := NewRTUFrameDecoder(timing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	anchor := 100 * time.Millisecond
+	if err := decoder.FeedByte(anchor, 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := decoder.FeedByte(0, 2); err == nil {
+		t.Fatal("clock regression accepted")
+	}
+	if err := decoder.FeedByte(timing.InterFrame(), 3); err == nil {
+		t.Fatal("clock regression moved the resynchronization anchor backward")
+	}
+	if err := decoder.FeedByte(anchor+timing.InterFrame(), 4); err != nil {
+		t.Fatal(err)
+	}
+}

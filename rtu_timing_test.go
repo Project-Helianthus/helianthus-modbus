@@ -69,6 +69,11 @@ func TestRTUTimingIncreaseAllowedButBaselineReductionRejected(t *testing.T) {
 	if _, err := NewRTUTiming(config); err == nil {
 		t.Fatal("t3.5 baseline reduction accepted")
 	}
+	config.InterFrameSafety = 0
+	config.InterCharacterSafety = base.InterFrame() + time.Nanosecond
+	if _, err := NewRTUTiming(config); err == nil {
+		t.Fatal("t1.5 greater than t3.5 accepted")
+	}
 }
 
 func TestRTUTimingOverflowAndInvalidFormatFailClosed(t *testing.T) {

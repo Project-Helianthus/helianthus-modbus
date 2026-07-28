@@ -49,6 +49,13 @@ GOWORK=off go run ./scripts/read_only_surface .
 echo "==> FMV3-M1-02 acceptance map"
 python3 scripts/validate_m1_02_acceptance.py
 
+echo "==> FMV3-M1-03 offline RTU acceptance map"
+if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
+  python3 scripts/validate_m1_03_acceptance.py
+else
+  python3 scripts/validate_m1_03_acceptance.py --candidate
+fi
+
 echo "==> scope policy mutation tests"
 python3 -m unittest discover -s tests -p 'test_*.py'
 
@@ -69,6 +76,9 @@ go vet ./...
 
 echo "==> go build"
 go build ./...
+
+echo "==> go build (linux/386 portability)"
+GOOS=linux GOARCH=386 go test -c -o /dev/null .
 
 echo "==> go test (race)"
 go test -race -count=1 ./...

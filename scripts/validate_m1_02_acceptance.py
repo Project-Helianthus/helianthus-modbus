@@ -612,12 +612,6 @@ def validate_gate_contract(
         "operability_and_replay_trace",
     ):
         raise AcceptanceError("operability gate evidence changed")
-    validate_tdd_red(
-        root,
-        gates.get("TDD_RED"),
-        required_tests,
-        verify_tdd_hosted,
-    )
     red = gates.get("TDD_RED")
     if not isinstance(red, dict) or not isinstance(red.get("commit_sha"), str):
         raise AcceptanceError("TDD_RED evidence is missing")
@@ -625,6 +619,12 @@ def validate_gate_contract(
         root,
         gates.get("reviewed_revision"),
         str(red["commit_sha"]),
+    )
+    validate_tdd_red(
+        root,
+        red,
+        required_tests,
+        verify_tdd_hosted,
     )
 
 

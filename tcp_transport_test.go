@@ -2,6 +2,7 @@ package modbus
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"io"
 	"net"
@@ -899,6 +900,82 @@ func TestTCPTransportPreparedFieldsSerializeWithCancellation(t *testing.T) {
 			event.RawADUHex == "complete"
 		if !blank && !complete {
 			t.Fatalf("partially prepared timer event: %#v", event)
+		}
+	}
+}
+
+func TestTCPTransportWriteReservationRetainsPhysicalOperationTrace(
+	t *testing.T,
+) {
+	client, server := net.Pipe()
+	defer func() { _ = server.Close() }()
+	owner := newTestConnectionOwner(t, 1, 1)
+	sink := &recordingTCPEventSink{}
+	transport, err := newTCPTransportWithConfig(
+		&scriptedWriteConn{Conn: client, fullWrite: true},
+		owner,
+		TCPTransportConfig{
+			MaxBufferedBytes: 260,
+			RequestDeadline:  time.Second,
+			ResponseDeadline: time.Second,
+			Clock:            &virtualTCPClock{},
+			EventSink:        sink,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer owner.Close()
+	request, err := NewReadRegistersRequest(
+		FunctionReadInputRegisters,
+		10,
+		2,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reservation, err := owner.ReserveRead(7, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectedADU, err := EncodeTCPReadADU(
+		reservation.TransactionID(),
+		7,
+		request,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transition, err := transport.WriteReservation(
+		context.Background(),
+		reservation,
+	)
+	if err != nil || transition.CloseConnection() {
+		t.Fatalf("write transition=%#v error=%v", transition, err)
+	}
+
+	required := map[TCPTransportEventKind]bool{
+		TCPEventWritePrepared:   false,
+		TCPEventWriteInvocation: false,
+		TCPEventWriteReturn:     false,
+		TCPEventTransmitResult:  false,
+	}
+	for _, event := range sink.snapshot() {
+		if _, ok := required[event.Kind]; !ok {
+			continue
+		}
+		required[event.Kind] = true
+		if event.RequestedFunction != FunctionReadInputRegisters ||
+			event.LogicalTable != InputRegisters ||
+			event.PhysicalOffset != 10 ||
+			event.PhysicalQuantity != 2 ||
+			event.RawADUHex != hex.EncodeToString(expectedADU) {
+			t.Fatalf("%s physical trace = %#v", event.Kind, event)
+		}
+	}
+	for kind, seen := range required {
+		if !seen {
+			t.Fatalf("%s event missing", kind)
 		}
 	}
 }

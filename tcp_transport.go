@@ -868,12 +868,16 @@ func (transport *TCPTransport) writeReservationUntil(
 		transition, cleanupErr := transport.releasePreWrite(reservation)
 		return transition, combineErrors(err, cleanupErr)
 	}
-	adu, err := transport.owner.encodeReservation(reservation)
+	adu, identity, err := transport.owner.encodeReservation(reservation)
 	if err != nil {
 		transition, cleanupErr := transport.releasePreWrite(reservation)
 		return transition, combineErrors(err, cleanupErr)
 	}
 	operation.mutateEventFields(func(fields *tcpEventFields) {
+		fields.RequestedFunction = identity.function
+		fields.LogicalTable = identity.table
+		fields.PhysicalOffset = identity.offset
+		fields.PhysicalQuantity = identity.quantity
 		fields.RawADUHex = hex.EncodeToString(adu)
 	})
 	operation.recordOnly(TCPEventWritePrepared)
@@ -981,17 +985,17 @@ func (transport *TCPTransport) writeCoalescedUntil(
 		if prepareErr != nil {
 			return prepareErr
 		}
-		physical := group.physical
-		adu, prepareErr =
+		var identity reservationWireIdentity
+		adu, identity, prepareErr =
 			transport.owner.encodeReservation(reservation)
 		if prepareErr != nil {
 			return prepareErr
 		}
 		operation.mutateEventFields(func(fields *tcpEventFields) {
-			fields.RequestedFunction = physical.Function()
-			fields.LogicalTable = physical.Table()
-			fields.PhysicalOffset = physical.Offset()
-			fields.PhysicalQuantity = physical.Quantity()
+			fields.RequestedFunction = identity.function
+			fields.LogicalTable = identity.table
+			fields.PhysicalOffset = identity.offset
+			fields.PhysicalQuantity = identity.quantity
 			fields.RawADUHex = hex.EncodeToString(adu)
 		})
 		operation.recordOnly(TCPEventWritePrepared)

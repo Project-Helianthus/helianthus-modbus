@@ -51,6 +51,13 @@ type TCPReservation struct {
 	deadlineOffset    time.Duration
 }
 
+type reservationWireIdentity struct {
+	function FunctionCode
+	table    LogicalTable
+	offset   uint16
+	quantity uint16
+}
+
 // TransactionID returns the allocated socket-lifetime transaction identifier.
 func (reservation TCPReservation) TransactionID() uint16 {
 	return reservation.transactionID
@@ -899,28 +906,34 @@ func (owner *TCPConnectionOwner) matchesReadReservation(
 
 func (owner *TCPConnectionOwner) encodeReservation(
 	reservation TCPReservation,
-) ([]byte, error) {
+) ([]byte, reservationWireIdentity, error) {
 	if owner == nil {
-		return nil, invalidOwner()
+		return nil, reservationWireIdentity{}, invalidOwner()
 	}
 	owner.mu.Lock()
 	defer owner.mu.Unlock()
 	request, err := owner.requestFor(reservation, requestReserved)
 	if err != nil {
-		return nil, err
+		return nil, reservationWireIdentity{}, err
 	}
+	identity := reservationWireIdentity{function: request.function}
 	if request.kind == requestRead {
-		return EncodeTCPReadADU(
+		identity.table = request.read.Table()
+		identity.offset = request.read.Offset()
+		identity.quantity = request.read.Quantity()
+		adu, encodeErr := EncodeTCPReadADU(
 			request.transactionID,
 			request.unitID,
 			request.read,
 		)
+		return adu, identity, encodeErr
 	}
-	return EncodeTCPDeviceIDAccessADU(
+	adu, encodeErr := EncodeTCPDeviceIDAccessADU(
 		request.transactionID,
 		request.unitID,
 		request.deviceID,
 	)
+	return adu, identity, encodeErr
 }
 
 // Generation returns the current socket generation.

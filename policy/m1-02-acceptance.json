@@ -1,0 +1,232 @@
+{
+  "schema": "helianthus.modbus.milestone-acceptance/v2",
+  "milestone": "FMV3-M1-02",
+  "canonical_sources": {
+    "companion_contract": {
+      "repository": "Project-Helianthus/helianthus-docs-ebus",
+      "commit_sha": "711a556fee344c6fe7f1ecf3253fcdb3f5f22d06",
+      "consumer_lock_path": "policy/modbus-companion-consumer-lock-v1.json",
+      "manifest_path": "docs/platform/manifests/modbus-foundation-profile-contract-v1.json",
+      "manifest_sha256": "c411e3e8a464e4b9d3a59d3f5a0c82b57e176e24dec9550b9bc0c8b3e4b28c70",
+      "policy_path": "docs/platform/modbus-foundation-profile-contract-v1.md",
+      "policy_sha256": "1a53f203eed42766ac2d91580c41f72674b5eaea374a1cf4fff650396f06b196"
+    },
+    "execution_plan": {
+      "repository": "Project-Helianthus/helianthus-execution-plans",
+      "commit_sha": "e633fa22a6a6fe3e4f3b74a68eb44401fe26f38d",
+      "path": "fronius-modbus-multivendor-v3-w29-26.implementing/plan.yaml",
+      "artifact_sha256": "14f5a38e332f1a46abddee8fe551d357474bf6ad8200349ef0c1b9ca995ed85e",
+      "task_block_sha256": "0e69ce6935da0015a66f5243c2c0108e48cd75f10e81c0c834e197c20c1ac854"
+    }
+  },
+  "requirements": [
+    {
+      "id": "tcp_socket_owner_allocator_map",
+      "source": "companion_contract#ownership-and-correlation",
+      "tests": [
+        "TestTCPEndpointRejectsDuplicateSocketOwnership",
+        "TestTCPEndpointClaimsSocketAliasesAtomically",
+        "TestTCPEndpointRejectsOpaqueSocketAliasBeforeActivation",
+        "TestTCPEndpointPublicAdmissionRejectsSyntheticSocket",
+        "TestTCPEndpointRejectsSecondRootForPhysicalRemote",
+        "TestTCPEndpointRejectsMismatchedRemoteBeforeSocketClaim",
+        "TestTCPEndpointPoolBoundsConnectionsAndOwnsOneStatePerSocket",
+        "TestConnectionOwnerUsesOneAllocatorAcrossUnits",
+        "TestConnectionOwnerEnforcesInFlightBound"
+      ]
+    },
+    {
+      "id": "tcp_correlation_match_and_generation",
+      "source": "execution_plan#tcp_correlation_contract.match_fields",
+      "tests": [
+        "TestCorrelationValidatesUnitFunctionAndResponseShape",
+        "TestResponseBetweenWriteInvocationAndTransmitResultIsNotLost",
+        "TestTCPEndpointEarlyResponseThenUnsafeWriteDropsConnection",
+        "TestLateMalformedResponseRetainsIdentityButIsNotLateSuccess",
+        "TestTCPTransportOldSocketCannotServeReconnectedGeneration",
+        "TestUncorrelatedFrameRetainsDiagnosticIdentityAndReceiptProvenance"
+      ]
+    },
+    {
+      "id": "request_offset_is_provenance_only",
+      "source": "execution_plan#tcp_correlation_contract.request_offset_role",
+      "tests": [
+        "TestWireResponseRetainsCompleteReadProvenance",
+        "TestDecodeReadRegistersResponsePreservesTableProvenance",
+        "TestCoalesceUnequalOverlappingReadsAndReplayExactViews"
+      ]
+    },
+    {
+      "id": "socket_lifetime_tombstone_and_rollover",
+      "source": "companion_contract#response-wait-abandonment",
+      "tests": [
+        "TestResponseWaitAbandonmentTombstonesAndDropsLateResponse",
+        "TestTombstoneExhaustionClosesSocket",
+        "TestTombstoneExhaustionClosesTransportAndReleasesPool",
+        "TestTCPEndpointTransactionIDExhaustionClosesAndReleasesSocket",
+        "TestTCPEndpointDispatchIdentityExhaustionDisablesEndpoint",
+        "TestPoolOwnsUniqueGenerationAllocationAcrossReconnects"
+      ]
+    },
+    {
+      "id": "bounded_isolated_profile_neutral_runtime",
+      "source": "execution_plan#tcp_correlation_contract.profile_semantics",
+      "tests": [
+        "TestConnectionOwnerEnforcesInFlightBound",
+        "TestSchedulerBoundsInflightRequests",
+        "TestSchedulerPrunesHistoricalScopeAndUnitMetadata",
+        "TestTCPEndpointInvalidConfigFailsBeforeActivation",
+        "TestTCPEndpointRejectedPlanDoesNotConsumeLastRequestIdentity",
+        "TestTCPEndpointPublicSurfaceHasNoLowLevelConstructorBypass"
+      ]
+    },
+    {
+      "id": "wire_and_logical_identity_exact_replay",
+      "source": "execution_plan#coalescing_identity_contract",
+      "tests": [
+        "TestCoalesceUnequalOverlappingReadsAndReplayExactViews",
+        "TestCoalescedReplayRequiresBoundPostWriteCorrelatedResponse",
+        "TestCoalescedQueuedCancellationRecomputesMinimalUnion",
+        "TestWireResponseRetainsCompleteReadProvenance"
+      ]
+    },
+    {
+      "id": "incompatible_reads_do_not_coalesce",
+      "source": "execution_plan#coalescing_identity_contract.incompatible_dimensions",
+      "tests": [
+        "TestCoalescingRefusesEveryIdentityMismatchWithoutMutation",
+        "TestCoalescedBindingRejectsWrongGenerationUnitAndRange",
+        "TestSchedulerIsScopeThenUnitRoundRobinAndFIFOWithinKey"
+      ]
+    },
+    {
+      "id": "abnormal_write_classification",
+      "source": "execution_plan#abnormal_write_results",
+      "tests": [
+        "TestTCPTransportWriteResultClassificationLifecycle",
+        "TestTCPTransportFullByteCountDoesNotMaskCancellationRace",
+        "TestTCPTransportFullTransmitCompletionWinsCancellationTie",
+        "TestCancellationBeforeWriteAndProvableZeroDoNotTombstone"
+      ]
+    },
+    {
+      "id": "possibly_transmitted_recovery",
+      "source": "execution_plan#possibly_transmitted_action",
+      "tests": [
+        "TestPossiblyTransmittedResultForcesReconnectGeneration",
+        "TestUnsafeTransmitTerminalizesSiblingInflightRequests",
+        "TestTCPEndpointUnsafeRetryRequiresReconnectBackoff",
+        "TestTCPEndpointUnsafeCloseGatesOpenBeforePoolRelease",
+        "TestTCPEndpointCancelledUnsafeRetryRetainsRecoveryBackoff",
+        "TestTCPEndpointFullTransmitCancellationRetainsRecoveryHandle",
+        "TestTCPEndpointBackoffExhaustionDisablesEndpoint",
+        "TestTCPTransportOldSocketCannotServeReconnectedGeneration"
+      ]
+    },
+    {
+      "id": "scheduler_pool_fairness_and_limits",
+      "source": "execution_plan#what",
+      "tests": [
+        "TestSchedulerPreservesCapacityForInactiveAdmissionKeys",
+        "TestSchedulerPreservesProtectedDeficitForActiveKeys",
+        "TestSchedulerIsScopeThenUnitRoundRobinAndFIFOWithinKey",
+        "TestTCPEndpointDispatchedDeadlineReleasesSchedulerSlot",
+        "TestTCPEndpointPoolBoundsConnectionsAndOwnsOneStatePerSocket",
+        "TestSchedulerOwnsAggregateCoalescedDependentBound"
+      ]
+    },
+    {
+      "id": "absolute_deadline_cancellation_and_backoff",
+      "source": "execution_plan#what",
+      "tests": [
+        "TestTCPEndpointAbsoluteDeadlineIncludesQueueDelay",
+        "TestTCPEndpointAbsoluteDeadlineDoesNotRestartAtWrite",
+        "TestTCPEndpointActiveReaderAdoptsEarlierResponseDeadline",
+        "TestTCPEndpointCancelledEarliestDeadlineKeepsLiveSibling",
+        "TestTCPEndpointDelayedReadInterruptCannotPoisonNextRead",
+        "TestTCPEndpointExpiredFullTransmitEmitsResponseWaitTombstone",
+        "TestTCPEndpointCancelCannotBeLostDuringRetryAdmission",
+        "TestTCPEndpointWaitReconnectCannotSucceedAtDeadline",
+        "TestReconnectBackoffRefusesDelayPastAbsoluteDeadline",
+        "TestReconnectBackoffWaitIsCancellationAware"
+      ]
+    },
+    {
+      "id": "operability_and_replay_trace",
+      "source": "execution_plan#gates.operability",
+      "tests": [
+        "TestTCPEndpointUsesOneGlobalEventSequenceAcrossSockets",
+        "TestTCPEndpointCancellationPrecedesItsLateResponseEvent",
+        "TestTCPEndpointResponseOutcomeLinearizesBeforeConcurrentCancel",
+        "TestTCPEndpointCorrelatesResponseBeforeWriteReturns",
+        "TestTCPEndpointUncorrelatedFramesKeepDiagnosticReceiptProvenance",
+        "TestTCPEndpointPublicTraceRetainsExactPhysicalOperation",
+        "TestTCPEndpointPublicTraceDistinguishesFC03AndFC04",
+        "TestTCPEndpointEventSinkCanInspectSnapshot",
+        "TestTCPEndpointEventSinkReentryFailsWithoutDeadlock",
+        "TestTCPEndpointSnapshotReportsQueueCoalescingAndResources",
+        "TestTCPEndpointSnapshotCountsResponseCancellationAndReconnect",
+        "TestTCPEndpointSnapshotBoundsPendingQueueMetricState",
+        "TestTCPEndpointEventSequenceExhaustionRejectsAdmission",
+        "TestTCPEndpointEventSequenceExhaustionClosesDispatchedWork",
+        "TestTCPEndpointEventSequenceExhaustionClosesWrite",
+        "TestTCPEndpointEventSequenceExhaustionClosesResponseRead"
+      ]
+    },
+    {
+      "id": "read_only_public_surface",
+      "source": "companion_contract#read-only",
+      "tests": [
+        "TestTCPEndpointPublicSurfaceHasNoLowLevelConstructorBypass",
+        "TestTCPEndpointPublicSurfaceScannerRejectsFactoryAliases",
+        "TestTCPOutboundRejectsBroadcastReservedAndZeroRequests"
+      ]
+    }
+  ],
+  "gates": {
+    "TDD_RED": {
+      "commit_sha": "037264cbfdea82fb73c64978fa538c34855cf48b",
+      "required_shape": "tests_only_parented_by_fmv3_m1_01",
+      "hosted_ci_conclusion": "failure",
+      "hosted_ci_run_url": "https://github.com/Project-Helianthus/helianthus-modbus/actions/runs/30353538725"
+    },
+    "CI": {
+      "commands": [
+        "./scripts/validate_companion_lock.sh",
+        "./scripts/scope_gate.sh",
+        "GOWORK=off go run ./scripts/read_only_surface .",
+        "python3 scripts/validate_m1_02_acceptance.py",
+        "python3 -m unittest discover -s tests -p 'test_*.py'",
+        "GOWORK=off go vet ./...",
+        "GOWORK=off go build ./...",
+        "GOWORK=off go test -race -count=1 ./..."
+      ]
+    },
+    "doc_gate": {
+      "repository": "Project-Helianthus/helianthus-docs-ebus",
+      "commit_sha": "711a556fee344c6fe7f1ecf3253fcdb3f5f22d06",
+      "required_check_run_url": "https://github.com/Project-Helianthus/helianthus-docs-ebus/actions/runs/30238777804/job/89891563104"
+    },
+    "transport_gate": {
+      "matrix_path": "policy/m1-02-transport-matrix.json",
+      "matrix_sha256": "e4e408d844aa4709127598b3ae7897d865cd4d7252d335d94daebb5427b07b1c"
+    },
+    "operability": {
+      "required_requirement_ids": [
+        "absolute_deadline_cancellation_and_backoff",
+        "operability_and_replay_trace"
+      ]
+    }
+  },
+  "test_file_sha256": {
+    "device_id_test.go": "efa5707a2a2357bdda1aa0dd1a642f2ed77fbf97603243474bfc693e4be679e0",
+    "pdu_test.go": "56a970af945842aaa570232d7bfa196ac90619a5cf6589263a5c7481040b1f23",
+    "tcp_adu_test.go": "f412ee8bfa2d2b352485d55291991e2dcbf100dcaf6292f5b61a4f0c1a8de701",
+    "tcp_coalescing_test.go": "e00274ac79a7a6c354b6d2c2aacc4fa0435507561063c34155b4bfbfd0f26415",
+    "tcp_endpoint_test.go": "3e373653cf4a1fb17a5a0abc19cc58bf959f4bc1e0dcb3f29fbdca72ca78d839",
+    "tcp_owner_test.go": "cd3d6e2c5a3742844f449df1615ef88611353249def1d99fd550567d834e943a",
+    "tcp_pool_test.go": "c855455fdb7a3dc9c186d7e14592385d598f40cf8f699ecb8af518ed07824879",
+    "tcp_scheduler_test.go": "52a3715e2a9e0f47ea583a123d6e1bb7659ccf239e3b3197a160743a5a7bea2d",
+    "tcp_transport_test.go": "0f30dea46dc3101f8af47bbb83c704c7a2799fd124c2c0be34045aae29111f33"
+  }
+}

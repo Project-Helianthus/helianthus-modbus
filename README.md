@@ -5,10 +5,27 @@ foundation for Helianthus.
 
 ## Status
 
-The repository implements the strict vendor-neutral phase-one PDU layer:
-validated FC03 and FC04 register reads, typed exception responses, and bounded
-FC2B/MEI0E Device Identification segments and aggregation. TCP and RTU runtime
-ownership remain separately authorized follow-up work.
+The repository implements the strict vendor-neutral phase-one PDU layer and
+the bounded Modbus TCP runtime: MBAP streaming, socket ownership, transaction
+correlation, scheduling, pooling, coalescing, cancellation, and recovery.
+Modbus RTU runtime ownership remains separately authorized follow-up work.
+
+`NewTCPEndpoint` is the single public construction root for the current
+FC03/FC04 runtime. It owns the connection pool, scheduler, transaction owners,
+reconnect backoff, monotonic clock, and replay event sequence. The lower-level
+runtime components cannot be constructed independently by package consumers.
+FC2B/MEI type 0x0E is available at the strict codec/owner layer; aggregate TCP
+execution through `TCPEndpoint` is an explicit FMV3-M1-04 deliverable.
+
+`OpenConnection` accepts a raw `*net.TCPConn` in production, verifies its
+remote address against the configured `tcp://<ip-literal>:<port>` identity,
+and claims both the physical remote and the concrete socket globally. A second
+endpoint root for the same gateway, an arbitrary connection wrapper, or a
+mismatched remote is rejected before activation and remains caller-owned.
+Synthetic `net.Conn` implementations are not a public admission path.
+Package-private trusted decorators exist only for deterministic fault-injection
+tests. This prevents competing schedulers, transaction allocators, or
+correlation maps around one gateway or byte stream.
 
 ## Ownership
 
@@ -45,6 +62,43 @@ phase-one transports. There is no generic function-code escape hatch and no
 write PDU, probe, or control API. Write support requires a separate safety plan
 and authorization.
 
+The operation allowlist does not imply that every operation has reached every
+runtime layer in M1-02. M1-02 owns the aggregate FC03/FC04 endpoint. M1-04 adds
+bounded FC2B/MEI type 0x0E endpoint execution without exposing a lower-level
+socket bypass.
+
+Every queued TCP read receives one immutable absolute monotonic deadline.
+Queueing, transport write, response wait, cancellation, and reconnect backoff
+consume that same deadline; none starts a new relative window. A response-wait
+timeout tombstones only the transmitted transaction. Other safe in-flight
+transactions continue on the socket, and a late matching frame remains
+request-bound diagnostic evidence without becoming deliverable.
+
+Retryable read state remains endpoint-owned and bounded while moving between
+socket generations. A provable zero-byte write may re-enter the fair queue
+without reconnect backoff. Any possibly transmitted write invalidates the
+socket and requires endpoint-owned backoff before retry on a new generation.
+Canceling the last retry does not bypass that endpoint recovery debt; the
+terminal handle remains a bounded recovery-only token until backoff completes.
+Per-dependent cancellation narrows the retained read plan, so retry cannot
+revive a cancelled logical view. `Close` terminalizes active and retryable work,
+retires every socket, and is idempotent.
+
+Endpoint events use one owner-assigned sequence across every socket and record
+enqueue, admission, queue service, coalescing, write invocation/result,
+cancellation, response receipt, timer, tombstone, reconnect, and jitter/backoff
+evidence. Equal monotonic offsets are therefore replayed in exact sequence
+order. Physical request events retain function, logical table, zero-based
+offset, quantity, and the exact immutable hex ADU; response events retain both
+requested and received function identity plus the exact received ADU.
+`TCPEndpoint.Snapshot` exposes the corresponding read-only health, finite
+resource utilization, queue wait, coalescing, response-class, timeout, retry,
+reconnect, cancellation, and observation-gap metrics. Event sinks may inspect
+that snapshot synchronously. Event-producing endpoint operations fail fast with
+`event_sink_reentry` while a callback is active, preventing callback re-entry
+from deadlocking runtime ownership locks. Sink panics are contained and counted
+without poisoning endpoint ownership state.
+
 The normative cross-repository boundary is
 [`modbus-multivendor-boundaries.md`](https://github.com/Project-Helianthus/helianthus-docs-ebus/blob/main/docs/platform/modbus-multivendor-boundaries.md).
 
@@ -70,6 +124,11 @@ inventory, but still pass the same dependency, vendor-token, and read-only
 gates. CI also validates
 [`modbus-companion-consumer-lock-v1.json`](policy/modbus-companion-consumer-lock-v1.json)
 against the exact merged public companion before compiling product code.
+FMV3-M1-02 runtime evidence is machine-checked by
+[`policy/m1-02-acceptance.json`](policy/m1-02-acceptance.json) against that
+pinned contract. The gate executes every mapped test, requires explicit
+run/pass events without skips, and locks the complete Go test-file inventory so
+helpers and harness code cannot drift independently of the reviewed evidence.
 
 The repository follows one issue and one pull request at a time, squash merge,
 strict test-first implementation, and applicable documentation/protocol gates.

@@ -6,7 +6,33 @@ cd "$repo_root"
 export GOWORK=off
 
 echo "==> terminology gate"
-if rg -nIwi 'm[a]ster|s[l]ave' . --glob '!.git/**'; then
+legacy_pattern='m[a]ster|s[l]ave'
+legacy_found=0
+tracked_status=0
+tracked_matches="$(git grep -nIwiE "$legacy_pattern" -- .)" || tracked_status=$?
+if (( tracked_status > 1 )); then
+  echo "Terminology scan failed."
+  exit "$tracked_status"
+fi
+if (( tracked_status == 0 )); then
+  printf '%s\n' "$tracked_matches"
+  legacy_found=1
+fi
+while IFS= read -r -d '' untracked_file; do
+  untracked_status=0
+  untracked_matches="$(
+    grep -nIwiE -- "$legacy_pattern" "$untracked_file"
+  )" || untracked_status=$?
+  if (( untracked_status > 1 )); then
+    echo "Terminology scan failed for $untracked_file."
+    exit "$untracked_status"
+  fi
+  if (( untracked_status == 0 )); then
+    printf '%s:%s\n' "$untracked_file" "$untracked_matches"
+    legacy_found=1
+  fi
+done < <(git ls-files --others --exclude-standard -z)
+if (( legacy_found != 0 )); then
   echo "Found legacy terminology."
   exit 1
 fi

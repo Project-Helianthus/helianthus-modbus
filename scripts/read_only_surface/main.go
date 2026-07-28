@@ -196,7 +196,7 @@ func main() {
 	}
 	expectedADUIdentifiers := map[string]int{
 		"writeReservationUntil": 3,
-		"writeCoalescedUntil":   3,
+		"writeCoalescedUntil":   4,
 		"performInvokedWrite":   2,
 	}
 	if !equalCounts(aduIdentifierCounts, expectedADUIdentifiers) {
@@ -329,6 +329,12 @@ func validateImports(fset *token.FileSet, file *ast.File) {
 		path, err := strconv.Unquote(imported.Path.Value)
 		if err != nil {
 			fail("%s: malformed import", location(fset, imported))
+		}
+		if imported.Name != nil {
+			fail(
+				"%s: product import aliases are forbidden",
+				location(fset, imported),
+			)
 		}
 		switch path {
 		case "reflect", "unsafe", "syscall", "plugin":

@@ -158,6 +158,76 @@ class M102AcceptanceTests(unittest.TestCase):
                 "helianthus-modbus/actions/runs/not-a-run"
             )
 
+    def test_hosted_tdd_red_requires_missing_runtime_failure(self) -> None:
+        commit = "037264cbfdea82fb73c64978fa538c34855cf48b"
+        hosted = {
+            "conclusion": "failure",
+            "event": "pull_request",
+            "headSha": commit,
+            "workflowName": "CI",
+            "jobs": [
+                {
+                    "name": "lint",
+                    "conclusion": "failure",
+                    "databaseId": 1,
+                }
+            ],
+        }
+        log = "\n".join(
+            (
+                "undefined: TCPEndpoint",
+                "undefined: TCPTransportEvent",
+                "undefined: ReadIntent",
+                "undefined: EndpointScheduler",
+            )
+        )
+        validator.validate_tdd_hosted_payload(commit, hosted, log)
+        with self.assertRaises(validator.AcceptanceError):
+            validator.validate_tdd_hosted_payload(
+                commit,
+                hosted,
+                "runner unavailable",
+            )
+
+    def test_doc_gate_requires_exact_successful_job_and_log(self) -> None:
+        run_id, job_id = validator.docs_run_and_job_ids(
+            "https://github.com/Project-Helianthus/"
+            "helianthus-docs-ebus/actions/runs/30238777804/"
+            "job/89891563104"
+        )
+        self.assertEqual(run_id, "30238777804")
+        hosted = {
+            "conclusion": "success",
+            "event": "pull_request_target",
+            "workflowName": "Modbus Trusted Revision",
+            "jobs": [
+                {
+                    "name": "Modbus Trusted Revision",
+                    "conclusion": "success",
+                    "databaseId": int(job_id),
+                }
+            ],
+        }
+        log = "\n".join(
+            (
+                validator.COMPANION_SOURCE["commit_sha"],
+                validator.PLAN_SOURCE["commit_sha"],
+                "modbus_docs_trust_ok",
+            )
+        )
+        validator.validate_doc_hosted_payload(job_id, hosted, log)
+        with self.assertRaises(validator.AcceptanceError):
+            validator.docs_run_and_job_ids(
+                "https://github.com/Project-Helianthus/"
+                "helianthus-docs-ebus/actions/runs/1"
+            )
+        with self.assertRaises(validator.AcceptanceError):
+            validator.validate_doc_hosted_payload(
+                job_id,
+                hosted,
+                "modbus_docs_trust_ok",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

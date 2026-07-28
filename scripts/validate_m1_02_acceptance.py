@@ -125,6 +125,17 @@ def github_run_id(run_url: str) -> str:
     return match.group(1)
 
 
+def docs_run_and_job_ids(check_url: str) -> tuple[str, str]:
+    match = re.fullmatch(
+        r"https://github\.com/Project-Helianthus/helianthus-docs-ebus/"
+        r"actions/runs/(\d+)/job/(\d+)",
+        check_url,
+    )
+    if match is None:
+        raise AcceptanceError("doc-gate required-check evidence is missing")
+    return match.group(1), match.group(2)
+
+
 def load_json(path: Path) -> dict[str, object]:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
@@ -382,10 +393,11 @@ def validate_gate_contract(
     ):
         raise AcceptanceError("doc-gate evidence changed")
     check_url = doc_gate.get("required_check_run_url")
-    if not isinstance(check_url, str) or not check_url.startswith(
-        "https://github.com/Project-Helianthus/helianthus-docs-ebus/actions/runs/"
-    ):
+    if not isinstance(check_url, str):
         raise AcceptanceError("doc-gate required-check evidence is missing")
+    docs_run_and_job_ids(check_url)
+    if verify_tdd_hosted:
+        validate_doc_hosted_evidence(root, check_url)
     operability = gates.get("operability")
     if not isinstance(operability, dict) or tuple(
         operability.get("required_requirement_ids", ())
@@ -494,7 +506,16 @@ def validate_tdd_red(
     if not verify_hosted:
         return
     result = subprocess.run(
-        ["gh", "run", "view", run_id, "--json", "conclusion,headSha"],
+        [
+            "gh",
+            "run",
+            "view",
+            run_id,
+            "--repo",
+            "Project-Helianthus/helianthus-modbus",
+            "--json",
+            "conclusion,event,headSha,jobs,workflowName",
+        ],
         cwd=root,
         check=False,
         capture_output=True,
@@ -505,8 +526,160 @@ def validate_tdd_red(
             f"cannot verify TDD_RED hosted CI: {result.stderr.strip()}"
         )
     hosted = json.loads(result.stdout)
-    if hosted != {"conclusion": "failure", "headSha": commit}:
+    jobs = hosted.get("jobs")
+    lint_job = next(
+        (
+            job
+            for job in jobs
+            if isinstance(job, dict) and job.get("name") == "lint"
+        ),
+        None,
+    ) if isinstance(jobs, list) else None
+    if not isinstance(lint_job, dict):
+        raise AcceptanceError("hosted TDD_RED lint job is missing")
+    job_id = lint_job.get("databaseId")
+    if not isinstance(job_id, int):
+        raise AcceptanceError("hosted TDD_RED lint job identity is missing")
+    log_result = subprocess.run(
+        [
+            "gh",
+            "run",
+            "view",
+            run_id,
+            "--repo",
+            "Project-Helianthus/helianthus-modbus",
+            "--job",
+            str(job_id),
+            "--log-failed",
+        ],
+        cwd=root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if log_result.returncode != 0:
+        raise AcceptanceError(
+            f"cannot inspect TDD_RED failed log: {log_result.stderr.strip()}"
+        )
+    validate_tdd_hosted_payload(commit, hosted, log_result.stdout)
+
+
+def validate_tdd_hosted_payload(
+    commit: str,
+    hosted: dict[str, object],
+    failed_log: str,
+) -> None:
+    if (
+        hosted.get("conclusion") != "failure"
+        or hosted.get("event") != "pull_request"
+        or hosted.get("headSha") != commit
+        or hosted.get("workflowName") != "CI"
+    ):
         raise AcceptanceError(f"hosted TDD_RED evidence mismatch: {hosted}")
+    jobs = hosted.get("jobs")
+    lint_jobs = [
+        job
+        for job in jobs
+        if isinstance(job, dict) and job.get("name") == "lint"
+    ] if isinstance(jobs, list) else []
+    if len(lint_jobs) != 1 or lint_jobs[0].get("conclusion") != "failure":
+        raise AcceptanceError("hosted TDD_RED lint job did not fail")
+    required_markers = (
+        "undefined: TCPEndpoint",
+        "undefined: TCPTransportEvent",
+        "undefined: ReadIntent",
+        "undefined: EndpointScheduler",
+    )
+    missing = [marker for marker in required_markers if marker not in failed_log]
+    if missing:
+        raise AcceptanceError(
+            f"hosted TDD_RED lacks missing-runtime evidence: {missing}"
+        )
+
+
+def validate_doc_hosted_evidence(root: Path, check_url: str) -> None:
+    run_id, job_id = docs_run_and_job_ids(check_url)
+    result = subprocess.run(
+        [
+            "gh",
+            "run",
+            "view",
+            run_id,
+            "--repo",
+            "Project-Helianthus/helianthus-docs-ebus",
+            "--json",
+            "conclusion,event,jobs,workflowName",
+        ],
+        cwd=root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise AcceptanceError(
+            f"cannot verify doc-gate hosted CI: {result.stderr.strip()}"
+        )
+    log_result = subprocess.run(
+        [
+            "gh",
+            "run",
+            "view",
+            run_id,
+            "--repo",
+            "Project-Helianthus/helianthus-docs-ebus",
+            "--job",
+            job_id,
+            "--log",
+        ],
+        cwd=root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if log_result.returncode != 0:
+        raise AcceptanceError(
+            f"cannot inspect doc-gate log: {log_result.stderr.strip()}"
+        )
+    validate_doc_hosted_payload(
+        job_id,
+        json.loads(result.stdout),
+        log_result.stdout,
+    )
+
+
+def validate_doc_hosted_payload(
+    job_id: str,
+    hosted: dict[str, object],
+    job_log: str,
+) -> None:
+    if (
+        hosted.get("conclusion") != "success"
+        or hosted.get("event") != "pull_request_target"
+        or hosted.get("workflowName") != "Modbus Trusted Revision"
+    ):
+        raise AcceptanceError(f"doc-gate hosted evidence mismatch: {hosted}")
+    jobs = hosted.get("jobs")
+    selected = [
+        job
+        for job in jobs
+        if isinstance(job, dict) and str(job.get("databaseId")) == job_id
+    ] if isinstance(jobs, list) else []
+    if (
+        len(selected) != 1
+        or selected[0].get("name") != "Modbus Trusted Revision"
+        or selected[0].get("conclusion") != "success"
+    ):
+        raise AcceptanceError("doc-gate hosted job identity changed")
+    required_markers = (
+        COMPANION_SOURCE["commit_sha"],
+        PLAN_SOURCE["commit_sha"],
+        "modbus_docs_trust_ok",
+    )
+    missing = [marker for marker in required_markers if marker not in job_log]
+    if missing:
+        raise AcceptanceError(
+            f"doc-gate log lacks immutable evidence: {missing}"
+        )
 
 
 def validate_body_evidence(

@@ -411,6 +411,40 @@ class ScopePolicyTests(unittest.TestCase):
                 result.stderr,
             )
 
+    def test_ast_gate_rejects_aliased_write_package(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            for relative in validator.EXPECTED_POLICY["allowed_product_go_files"]:
+                target = root / relative
+                target.write_bytes((SCRIPT.parents[1] / relative).read_bytes())
+            path = root / "tcp_transport.go"
+            source = path.read_text(encoding="utf-8").replace(
+                '\t"fmt"\n',
+                '\tprinter "fmt"\n',
+                1,
+            )
+            source += (
+                "\nfunc emitAliased(target io.Writer, frame []byte) error {\n"
+                "    _, err := printer.Fprint(target, frame)\n"
+                "    return err\n"
+                "}\n"
+            )
+            path.write_text(source, encoding="utf-8")
+            result = subprocess.run(
+                [
+                    "go",
+                    "run",
+                    str(SCRIPT.parents[1] / "scripts" / "read_only_surface"),
+                    str(root),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+                env={**__import__("os").environ, "GOWORK": "off"},
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("product import aliases are forbidden", result.stderr)
+
     def test_ast_gate_rejects_deadline_capability_escape(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

@@ -96,7 +96,8 @@ resource utilization, queue wait, coalescing, response-class, timeout, retry,
 reconnect, cancellation, and observation-gap metrics. Event sinks may inspect
 that snapshot synchronously. Event-producing endpoint operations fail fast with
 `event_sink_reentry` while a callback is active, preventing callback re-entry
-from deadlocking runtime ownership locks.
+from deadlocking runtime ownership locks. Sink panics are contained and counted
+without poisoning endpoint ownership state.
 
 The normative cross-repository boundary is
 [`modbus-multivendor-boundaries.md`](https://github.com/Project-Helianthus/helianthus-docs-ebus/blob/main/docs/platform/modbus-multivendor-boundaries.md).

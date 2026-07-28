@@ -42,13 +42,13 @@ EXPECTED_POLICY = {
             "29468e151d3b241ac49cda6e97be2c1e78561bb41703be347ff0dbf17650c42b"
         ),
         "tcp_coalescing.go": (
-            "e301563bf5d37bcd5c69b98f071f86e49167f290afa43abfc50f6e01017b47eb"
+            "d57ec064b99bdfe49d12e608fafc5883e84eec8037aa6ee485602424e2c9be7d"
         ),
         "tcp_endpoint.go": (
             "28ee5217b93240ee1b8a0056da9411d823c79adcf7116579cbf08595855fcffb"
         ),
         "tcp_owner.go": (
-            "1ee599e92b1640a4d591d68f5f5c63c30453163a449da5ce6fea6dd423f7fd93"
+            "b062e796fb3c60c9dd3b6716af6271543fc394b4646af52990cfc1b3d8032b00"
         ),
         "tcp_pool.go": (
             "bdbc8f871915f1173d67a211dcff8572516e071cdb3d1793a463f5598c8e7114"
@@ -57,7 +57,7 @@ EXPECTED_POLICY = {
             "d30b7154b9762380dc69bb334436abf62cde45273310a829c08ed2fac9b27252"
         ),
         "tcp_transport.go": (
-            "774ad5047bcf183b2df9e01393b48985db6c371e3c8f66048db67a459a433277"
+            "e74e803d5cb2a654a1e44d5e2d8eb018d3641b40fe942e9e319cceeceeb80d84"
         ),
     },
     "trusted_go_tool_sha256": {
@@ -65,12 +65,12 @@ EXPECTED_POLICY = {
             "903cfc5df5569c316186032ab2da644dcb664a51548b064e3d3e67c945b96880"
         ),
         "scripts/read_only_surface/main.go": (
-            "b167da339c266b76c8917f5751aa3bbd5acaeed264d86085597759434ca9725a"
+            "e8a3d211d7ad9f70edab01bb552087e12c7e1ea97bafbeab48700241737f86c8"
         ),
     },
     "trusted_python_tool_sha256": {
         "scripts/validate_m1_02_acceptance.py": (
-            "817a5de15f9d806b7f82443ae20112fc6efe8563cdbdab5da718e67bffb49962"
+            "78a422c705d18167fa8dc515097d12bc5a96d54fd17cedc911ec6dcb579683c5"
         ),
     },
     "allowed_operations": [

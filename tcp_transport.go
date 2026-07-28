@@ -114,13 +114,15 @@ type TCPEndpointMetrics struct {
 	Reconnects               uint64
 	Cancellations            uint64
 	SourceObservationGaps    uint64
+	EventSinkPanics          uint64
 	Responses                TCPResponseClassMetrics
 }
 
 // TCPTransportEventSink receives events synchronously in sequence order. A
 // sink may inspect endpoint snapshots. Endpoint operations that could emit
 // another event fail with event_sink_reentry while a callback is active.
-// Implementations must still return promptly.
+// Implementations must still return promptly. Sink panics are contained and
+// counted in TCPEndpointMetrics.
 type TCPTransportEventSink interface {
 	RecordTCPTransportEvent(TCPTransportEvent)
 }
@@ -249,6 +251,15 @@ func (timeline *tcpEndpointTimeline) record(
 		func() {
 			timeline.callback.Store(true)
 			defer timeline.callback.Store(false)
+			defer func() {
+				if recover() != nil {
+					timeline.mu.Lock()
+					saturatingIncrement(
+						&timeline.metrics.EventSinkPanics,
+					)
+					timeline.mu.Unlock()
+				}
+			}()
 			sink.RecordTCPTransportEvent(event)
 		}()
 	}
@@ -946,37 +957,50 @@ func (transport *TCPTransport) writeCoalescedUntil(
 	if err := operation.preInvocationError(); err != nil {
 		return OwnerTransition{}, errors.Join(err, group.FailTransport())
 	}
-	reservation, err := group.reservationForTransport(
-		transport.owner,
-		transport.generation,
-	)
-	if err != nil {
-		return OwnerTransition{}, errors.Join(err, group.FailTransport())
-	}
-	adu, err := transport.owner.encodeReservation(reservation)
-	if err != nil {
-		return OwnerTransition{}, errors.Join(err, group.FailTransport())
-	}
-	operation.fields.RawADUHex = hex.EncodeToString(adu)
-	operation.recordOnly(TCPEventWritePrepared)
+	var reservation TCPReservation
+	var adu []byte
 	interrupter := newSocketInterrupter(
 		transport.conn,
 		transport.conn.SetWriteDeadline,
 	)
 	operation.setInterrupt(interrupter.Interrupt)
-	if err := operation.beginInvocation(func() error {
-		begunReservation, beginErr := group.beginWrite(transport)
-		if beginErr == nil {
-			reservation = begunReservation
-			operation.setRequestIdentity(
-				reservation.PhysicalRequestID(),
-				reservation.TransactionID(),
-			)
+	err := group.withWriteLock(func() error {
+		var prepareErr error
+		reservation, prepareErr = group.reservationForTransportLocked(
+			transport.owner,
+			transport.generation,
+		)
+		if prepareErr != nil {
+			return prepareErr
 		}
-		return beginErr
-	}); err != nil {
+		adu, prepareErr =
+			transport.owner.encodeReservation(reservation)
+		if prepareErr != nil {
+			return prepareErr
+		}
+		operation.fields.RawADUHex = hex.EncodeToString(adu)
+		operation.recordOnly(TCPEventWritePrepared)
+		return operation.beginInvocation(func() error {
+			begunReservation, beginErr :=
+				group.beginWriteLocked(transport)
+			if beginErr == nil {
+				reservation = begunReservation
+				operation.setRequestIdentity(
+					reservation.PhysicalRequestID(),
+					reservation.TransactionID(),
+				)
+			}
+			return beginErr
+		})
+	})
+	if err != nil {
 		groupErr := group.FailTransport()
-		transition, cleanupErr := transport.releasePreWrite(reservation)
+		var transition OwnerTransition
+		var cleanupErr error
+		if reservation.owner != nil {
+			transition, cleanupErr =
+				transport.releasePreWrite(reservation)
+		}
 		return transition, errors.Join(err, groupErr, cleanupErr)
 	}
 	transition, writeErr := transport.performInvokedWrite(

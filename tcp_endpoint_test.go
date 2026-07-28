@@ -2939,6 +2939,173 @@ func TestTCPEndpointRetryDoesNotReviveCancelledLogicalView(t *testing.T) {
 	}
 }
 
+func TestTCPEndpointPreWriteCancellationShrinksReservedPhysicalRead(
+	t *testing.T,
+) {
+	clock := &virtualTCPClock{}
+	endpoint, err := NewTCPEndpoint(endpointConfigForTest(clock, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = endpoint.Close() }()
+	client, peer := net.Pipe()
+	defer func() { _ = peer.Close() }()
+	connection, err := endpoint.openTestConnection(client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, _ := NewReadRegistersRequest(
+		FunctionReadHoldingRegisters,
+		10,
+		4,
+	)
+	second, _ := NewReadRegistersRequest(
+		FunctionReadHoldingRegisters,
+		12,
+		4,
+	)
+	request, err := endpoint.EnqueueRead(TCPReadPlan{
+		Connection:         connection,
+		UnitID:             1,
+		AuthorizationScope: "endpoint-test",
+		PollGeneration:     1,
+		DeadlineIdentity:   1,
+		Timeout:            10 * time.Second,
+		Reads: []TCPLogicalRead{
+			{LogicalViewID: 1, Request: first},
+			{LogicalViewID: 2, Request: second},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dispatch, ok := endpoint.Dispatch()
+	if !ok {
+		t.Fatal("dispatch missing")
+	}
+	endpoint.mu.Lock()
+	state := endpoint.connections[connection.connectionID]
+	endpoint.mu.Unlock()
+	if state == nil {
+		t.Fatal("connection state missing")
+	}
+	<-state.transport.writeGate
+	writeDone := make(chan error, 1)
+	go func() {
+		_, writeErr := endpoint.Write(context.Background(), dispatch)
+		writeDone <- writeErr
+	}()
+	deadline := time.Now().Add(time.Second)
+	for {
+		endpoint.mu.Lock()
+		active := endpoint.requests[request.requestID]
+		endpoint.mu.Unlock()
+		if active == nil {
+			t.Fatal("request disappeared before reservation binding")
+		}
+		active.group.mu.Lock()
+		bound := active.group.owner != nil
+		active.group.mu.Unlock()
+		if bound {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("write did not bind reservation before gate")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if _, err := endpoint.CancelLogical(request, 1); err != nil {
+		t.Fatal(err)
+	}
+	wireDone := make(chan struct {
+		wire []byte
+		err  error
+	}, 1)
+	go func() {
+		wire := make([]byte, 12)
+		_, readErr := io.ReadFull(peer, wire)
+		wireDone <- struct {
+			wire []byte
+			err  error
+		}{wire: wire, err: readErr}
+	}()
+	state.transport.writeGate <- struct{}{}
+	if err := <-writeDone; err != nil {
+		t.Fatal(err)
+	}
+	wireResult := <-wireDone
+	if wireResult.err != nil {
+		t.Fatal(wireResult.err)
+	}
+	if !reflect.DeepEqual(
+		wireResult.wire[8:12],
+		[]byte{0, 12, 0, 4},
+	) {
+		t.Fatalf(
+			"cancelled range remains on wire: %v",
+			wireResult.wire[8:12],
+		)
+	}
+}
+
+func TestTCPEndpointContainsEventSinkPanicWithoutPoisoningOutcome(
+	t *testing.T,
+) {
+	var panicOnce sync.Once
+	sink := &recordingTCPEventSink{
+		hook: func(event TCPTransportEvent) {
+			if event.Kind == TCPEventCallerCancellation {
+				panicOnce.Do(func() { panic("sink failure") })
+			}
+		},
+	}
+	clock := &virtualTCPClock{}
+	endpoint, err := NewTCPEndpoint(endpointConfigForTest(clock, sink))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = endpoint.Close() }()
+	client, peer := net.Pipe()
+	defer func() { _ = peer.Close() }()
+	connection, err := endpoint.openTestConnection(client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request, err := endpoint.EnqueueRead(
+		endpointPlan(t, connection, 10*time.Second, 1, 10),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dispatch, ok := endpoint.Dispatch()
+	if !ok {
+		t.Fatal("dispatch missing")
+	}
+	_ = endpointWriteOne(t, endpoint, dispatch, peer)
+	if _, err := endpoint.CancelLogical(request, 1); err != nil {
+		t.Fatal(err)
+	}
+	if endpoint.Snapshot().Metrics.EventSinkPanics != 1 {
+		t.Fatalf(
+			"sink panic metric=%d",
+			endpoint.Snapshot().Metrics.EventSinkPanics,
+		)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, cancelErr := endpoint.CancelLogical(request, 1)
+		done <- cancelErr
+	}()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("second cancellation unexpectedly succeeded")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("event sink panic poisoned endpoint outcome state")
+	}
+}
+
 func TestTCPEndpointCloseRetiresAllOwnedState(t *testing.T) {
 	clock := &virtualTCPClock{}
 	endpoint, err := NewTCPEndpoint(endpointConfigForTest(clock, nil))

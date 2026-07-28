@@ -478,6 +478,36 @@ func (owner *TCPConnectionOwner) CancelBeforeWrite(
 	return nil
 }
 
+func (owner *TCPConnectionOwner) replaceReservedRead(
+	reservation TCPReservation,
+	request ReadRegistersRequest,
+) error {
+	if err := validateReadRegistersRequest(request); err != nil {
+		return err
+	}
+	if owner == nil {
+		return invalidOwner()
+	}
+	owner.mu.Lock()
+	defer owner.mu.Unlock()
+	owned, err := owner.requestFor(reservation, requestReserved)
+	if err != nil {
+		return err
+	}
+	if owned.kind != requestRead ||
+		owned.read.Function() != request.Function() {
+		return protocolError(
+			ErrorInvalidRequest,
+			request.Function(),
+			0,
+			"reserved_read_identity",
+			-1,
+		)
+	}
+	owned.read = request
+	return nil
+}
+
 // MarkWriteInvoked crosses the cancellation-safe write boundary.
 func (owner *TCPConnectionOwner) MarkWriteInvoked(
 	reservation TCPReservation,

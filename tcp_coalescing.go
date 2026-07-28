@@ -405,21 +405,10 @@ func (transition CoalescedTransition) FailedReservations() []TCPReservation {
 	return transition.ownerTransition.FailedReservations()
 }
 
-func (group *CoalescedRead) reservationForTransport(
+func (group *CoalescedRead) reservationForTransportLocked(
 	owner *TCPConnectionOwner,
 	generation uint64,
 ) (TCPReservation, error) {
-	if group == nil {
-		return TCPReservation{}, protocolError(
-			ErrorInvalidRequest,
-			0,
-			0,
-			"coalesced_group",
-			-1,
-		)
-	}
-	group.mu.Lock()
-	defer group.mu.Unlock()
 	if group.writeBegun ||
 		group.completed ||
 		group.physicalRequestID == 0 ||
@@ -443,6 +432,23 @@ func (group *CoalescedRead) reservationForTransport(
 		)
 	}
 	return group.reservation, nil
+}
+
+func (group *CoalescedRead) withWriteLock(
+	prepare func() error,
+) error {
+	if group == nil || prepare == nil {
+		return protocolError(
+			ErrorInvalidRequest,
+			0,
+			0,
+			"coalesced_write_preparation",
+			-1,
+		)
+	}
+	group.mu.Lock()
+	defer group.mu.Unlock()
+	return prepare()
 }
 
 func (group *CoalescedRead) invokeWrite(
@@ -482,11 +488,17 @@ func (group *CoalescedRead) beginWrite(
 	transport *TCPTransport,
 ) (TCPReservation, error) {
 	group.mu.Lock()
+	defer group.mu.Unlock()
+	return group.beginWriteLocked(transport)
+}
+
+func (group *CoalescedRead) beginWriteLocked(
+	transport *TCPTransport,
+) (TCPReservation, error) {
 	if group.writeBegun ||
 		group.completed ||
 		group.physicalRequestID == 0 ||
 		group.activeDependentCountLocked() == 0 {
-		group.mu.Unlock()
 		return TCPReservation{}, protocolError(
 			ErrorInvalidRequest,
 			0,
@@ -498,7 +510,6 @@ func (group *CoalescedRead) beginWrite(
 	if transport != nil &&
 		(transport.owner != group.owner ||
 			transport.generation != group.generation) {
-		group.mu.Unlock()
 		return TCPReservation{}, protocolError(
 			ErrorInvalidRequest,
 			0,
@@ -509,7 +520,6 @@ func (group *CoalescedRead) beginWrite(
 	}
 	if group.scheduler != nil {
 		if err := group.scheduler.RequireCoalescedDispatch(group); err != nil {
-			group.mu.Unlock()
 			return TCPReservation{}, err
 		}
 	}
@@ -518,12 +528,10 @@ func (group *CoalescedRead) beginWrite(
 			group.reservation,
 			group,
 		); err != nil {
-			group.mu.Unlock()
 			return TCPReservation{}, err
 		}
 	}
 	if err := group.owner.MarkWriteInvoked(group.reservation); err != nil {
-		group.mu.Unlock()
 		if transport != nil {
 			transport.forgetCoalesced(group.physicalRequestID)
 		}
@@ -536,9 +544,7 @@ func (group *CoalescedRead) beginWrite(
 			group.dependents[index].state = dependentAttached
 		}
 	}
-	reservation := group.reservation
-	group.mu.Unlock()
-	return reservation, nil
+	return group.reservation, nil
 }
 
 func (group *CoalescedRead) finishWriteFailure() {
@@ -629,6 +635,22 @@ func (group *CoalescedRead) cancelLocked(
 		activeAfter := group.activeDependentCountLocked() - 1
 		var ownerTransition OwnerTransition
 		var ownerErr error
+		var replacement ReadRegistersRequest
+		haveReplacement := false
+		if !group.writeBegun && activeAfter > 0 {
+			replacement, ownerErr =
+				group.physicalWithoutLogicalLocked(logicalViewID)
+			if ownerErr == nil && group.owner != nil {
+				ownerErr = group.owner.replaceReservedRead(
+					group.reservation,
+					replacement,
+				)
+			}
+			if ownerErr != nil {
+				return CoalescedTransition{}, nil, false, ownerErr
+			}
+			haveReplacement = true
+		}
 		if !group.writeBegun &&
 			activeAfter == 0 &&
 			group.owner != nil {
@@ -646,10 +668,8 @@ func (group *CoalescedRead) cancelLocked(
 		dependent.state = dependentCancelled
 		group.releaseDependentCount(1)
 		active := group.activeDependentCountLocked()
-		if !group.writeBegun && group.owner == nil && active > 0 {
-			if err := group.recomputePhysicalLocked(); err != nil {
-				return CoalescedTransition{}, nil, false, err
-			}
+		if haveReplacement {
+			group.applyPhysicalLocked(replacement)
 		}
 		if active == 0 {
 			group.completed = true
@@ -670,13 +690,18 @@ func (group *CoalescedRead) cancelLocked(
 	)
 }
 
-func (group *CoalescedRead) recomputePhysicalLocked() error {
+func (group *CoalescedRead) physicalWithoutLogicalLocked(
+	excludedLogicalViewID uint64,
+) (ReadRegistersRequest, error) {
 	var minOffset uint32
 	var maxEnd uint32
 	haveActive := false
 	for _, dependent := range group.dependents {
 		if dependent.state != dependentQueued &&
 			dependent.state != dependentAttached {
+			continue
+		}
+		if dependent.slice.logicalViewID == excludedLogicalViewID {
 			continue
 		}
 		start := uint32(dependent.slice.logicalOffset)
@@ -690,7 +715,7 @@ func (group *CoalescedRead) recomputePhysicalLocked() error {
 		haveActive = true
 	}
 	if !haveActive || maxEnd <= minOffset {
-		return protocolError(
+		return ReadRegistersRequest{}, protocolError(
 			ErrorInvalidRequest,
 			group.physical.Function(),
 			0,
@@ -704,8 +729,14 @@ func (group *CoalescedRead) recomputePhysicalLocked() error {
 		uint16(maxEnd-minOffset),
 	)
 	if err != nil {
-		return err
+		return ReadRegistersRequest{}, err
 	}
+	return physical, nil
+}
+
+func (group *CoalescedRead) applyPhysicalLocked(
+	physical ReadRegistersRequest,
+) {
 	group.physical = physical
 	for index := range group.dependents {
 		dependent := &group.dependents[index]
@@ -714,9 +745,8 @@ func (group *CoalescedRead) recomputePhysicalLocked() error {
 			continue
 		}
 		dependent.slice.sliceOffset =
-			dependent.slice.logicalOffset - uint16(minOffset)
+			dependent.slice.logicalOffset - physical.Offset()
 	}
-	return nil
 }
 
 // ActiveDependentCount returns queued or attached dependent count.

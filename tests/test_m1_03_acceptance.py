@@ -113,6 +113,15 @@ def transport_override_payload() -> dict[str, object]:
 
 
 class M103AcceptanceTests(unittest.TestCase):
+    @staticmethod
+    def pull_request_evidence() -> dict[str, object]:
+        document = json.loads(
+            (ROOT / "policy" / "m1-03-acceptance.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        return document["gates"]["pull_request"]
+
     def test_exact_manifest_validates_without_hosted_queries(self) -> None:
         document = json.loads(
             (ROOT / "policy" / "m1-03-acceptance.json").read_text(
@@ -145,12 +154,7 @@ class M103AcceptanceTests(unittest.TestCase):
             validator.validate_authorization(payload)
 
     def test_pull_request_commit_identity_drift_is_rejected(self) -> None:
-        document = json.loads(
-            (ROOT / "policy" / "m1-03-acceptance.json").read_text(
-                encoding="utf-8"
-            )
-        )
-        pull_request = document["gates"]["pull_request"]
+        pull_request = self.pull_request_evidence()
         for field in ("head_sha", "merge_sha"):
             drifted = dict(pull_request)
             drifted[field] = "0" * 40
@@ -166,12 +170,80 @@ class M103AcceptanceTests(unittest.TestCase):
                         require_published=False,
                     )
 
+    def test_pull_request_missing_reviewed_head_is_rejected(self) -> None:
+        with mock.patch.object(
+            validator.base,
+            "ensure_git_object",
+            side_effect=validator.AcceptanceError("missing reviewed head"),
+        ):
+            with self.assertRaisesRegex(
+                validator.AcceptanceError,
+                "missing reviewed head",
+            ):
+                validator.validate_pull_request(
+                    ROOT,
+                    self.pull_request_evidence(),
+                    "f5e55fccafc060c5556d5510ddb373dc8dbc2bf4",
+                    verify_hosted=False,
+                    require_published=False,
+                )
+
+    def test_pull_request_red_ancestry_drift_is_rejected(self) -> None:
+        with mock.patch.object(
+            validator.base,
+            "git_is_ancestor",
+            return_value=False,
+        ):
+            with self.assertRaisesRegex(
+                validator.AcceptanceError,
+                "TDD_RED is not ancestral to reviewed PR head",
+            ):
+                validator.validate_pull_request(
+                    ROOT,
+                    self.pull_request_evidence(),
+                    "f5e55fccafc060c5556d5510ddb373dc8dbc2bf4",
+                    verify_hosted=False,
+                    require_published=False,
+                )
+
+    def test_pull_request_squash_topology_drift_is_rejected(self) -> None:
+        invalid = mock.Mock(returncode=0, stdout="merge parent extra-parent\n")
+        with mock.patch.object(
+            validator.subprocess,
+            "run",
+            return_value=invalid,
+        ):
+            with self.assertRaisesRegex(
+                validator.AcceptanceError,
+                "merge is not one squash commit over its base",
+            ):
+                validator.validate_pull_request(
+                    ROOT,
+                    self.pull_request_evidence(),
+                    "f5e55fccafc060c5556d5510ddb373dc8dbc2bf4",
+                    verify_hosted=False,
+                    require_published=False,
+                )
+
+    def test_pull_request_merge_ancestry_drift_is_rejected(self) -> None:
+        with mock.patch.object(
+            validator.base,
+            "git_is_ancestor",
+            side_effect=(True, False),
+        ):
+            with self.assertRaisesRegex(
+                validator.AcceptanceError,
+                "squash merge is not ancestral to HEAD",
+            ):
+                validator.validate_pull_request(
+                    ROOT,
+                    self.pull_request_evidence(),
+                    "f5e55fccafc060c5556d5510ddb373dc8dbc2bf4",
+                    verify_hosted=False,
+                    require_published=False,
+                )
+
     def test_pull_request_reviewed_tree_drift_is_rejected(self) -> None:
-        document = json.loads(
-            (ROOT / "policy" / "m1-03-acceptance.json").read_text(
-                encoding="utf-8"
-            )
-        )
         with mock.patch.object(
             validator.base,
             "git_tree",
@@ -183,7 +255,7 @@ class M103AcceptanceTests(unittest.TestCase):
             ):
                 validator.validate_pull_request(
                     ROOT,
-                    document["gates"]["pull_request"],
+                    self.pull_request_evidence(),
                     "f5e55fccafc060c5556d5510ddb373dc8dbc2bf4",
                     verify_hosted=False,
                     require_published=False,

@@ -146,12 +146,256 @@ def load_json(path: Path) -> dict[str, object]:
     return value
 
 
-def test_evidence(root: Path) -> dict[str, object]:
-    tool = Path(__file__).resolve().parent / "acceptance_evidence"
+def validate_reviewed_revision_payload(
+    evidence: object,
+    pull_request: object,
+    *,
+    red_is_ancestor_of_reviewed_head: bool,
+    reviewed_head_tree: str,
+    squash_merge_tree: str,
+    squash_merge_is_ancestor_of_head: bool,
+) -> None:
+    if not isinstance(evidence, dict) or not isinstance(pull_request, dict):
+        raise AcceptanceError("reviewed revision evidence is missing")
+    expected_keys = {
+        "repository",
+        "pull_request",
+        "reviewed_head_sha",
+        "reviewed_head_tree_sha",
+        "squash_merge_sha",
+        "squash_merge_tree_sha",
+    }
+    if set(evidence) != expected_keys:
+        raise AcceptanceError("reviewed revision evidence shape changed")
+    full_sha_fields = (
+        "reviewed_head_sha",
+        "reviewed_head_tree_sha",
+        "squash_merge_sha",
+        "squash_merge_tree_sha",
+    )
+    if any(
+        not isinstance(evidence.get(field), str)
+        or re.fullmatch(r"[0-9a-f]{40}", str(evidence[field])) is None
+        for field in full_sha_fields
+    ):
+        raise AcceptanceError("reviewed revision requires full immutable SHAs")
+    merge_commit = pull_request.get("mergeCommit")
+    if (
+        evidence.get("repository")
+        != "Project-Helianthus/helianthus-modbus"
+        or evidence.get("pull_request") != 6
+        or pull_request.get("number") != evidence.get("pull_request")
+        or pull_request.get("state") != "MERGED"
+        or pull_request.get("baseRefName") != "main"
+        or not pull_request.get("mergedAt")
+        or pull_request.get("headRefOid") != evidence.get("reviewed_head_sha")
+        or not isinstance(merge_commit, dict)
+        or merge_commit.get("oid") != evidence.get("squash_merge_sha")
+    ):
+        raise AcceptanceError("hosted PR revision evidence mismatch")
+    if not red_is_ancestor_of_reviewed_head:
+        raise AcceptanceError("TDD_RED is not ancestral to the reviewed PR head")
+    if reviewed_head_tree != evidence.get("reviewed_head_tree_sha"):
+        raise AcceptanceError("reviewed PR head tree changed")
+    if squash_merge_tree != evidence.get("squash_merge_tree_sha"):
+        raise AcceptanceError("squash merge tree changed")
+    if reviewed_head_tree != squash_merge_tree:
+        raise AcceptanceError("reviewed and squash-merged trees differ")
+    if not squash_merge_is_ancestor_of_head:
+        raise AcceptanceError("squash merge is not an ancestor of HEAD")
+
+
+def ensure_git_object(root: Path, commit: str) -> None:
+    present = subprocess.run(
+        ["git", "cat-file", "-e", f"{commit}^{{commit}}"],
+        cwd=root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if present.returncode == 0:
+        return
+    fetched = subprocess.run(
+        ["git", "fetch", "--no-tags", "origin", commit],
+        cwd=root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if fetched.returncode != 0:
+        raise AcceptanceError(
+            f"cannot fetch immutable revision {commit}: {fetched.stderr.strip()}"
+        )
+
+
+def ensure_full_history(root: Path) -> None:
+    shallow = subprocess.run(
+        ["git", "rev-parse", "--is-shallow-repository"],
+        cwd=root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if shallow.returncode != 0:
+        raise AcceptanceError(
+            f"cannot inspect repository depth: {shallow.stderr.strip()}"
+        )
+    if shallow.stdout.strip() == "false":
+        return
+    fetched = subprocess.run(
+        ["git", "fetch", "--unshallow", "--no-tags", "origin"],
+        cwd=root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if fetched.returncode != 0:
+        raise AcceptanceError(
+            f"cannot materialize checkout ancestry: {fetched.stderr.strip()}"
+        )
+
+
+def fetch_reviewed_pr_head(
+    root: Path,
+    pull_number: int,
+    expected_sha: str,
+) -> str:
+    evidence_ref = f"refs/helianthus/evidence/pull-{pull_number}-head"
+    fetched = subprocess.run(
+        [
+            "git",
+            "fetch",
+            "--no-tags",
+            "origin",
+            f"+refs/pull/{pull_number}/head:{evidence_ref}",
+        ],
+        cwd=root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if fetched.returncode != 0:
+        raise AcceptanceError(
+            f"cannot fetch reviewed PR head: {fetched.stderr.strip()}"
+        )
+    resolved = subprocess.run(
+        ["git", "rev-parse", evidence_ref],
+        cwd=root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if resolved.returncode != 0 or resolved.stdout.strip() != expected_sha:
+        raise AcceptanceError("fetched PR head differs from hosted PR evidence")
+    return evidence_ref
+
+
+def git_is_ancestor(root: Path, ancestor: str, descendant: str) -> bool:
     result = subprocess.run(
-        ["go", "run", str(tool), str(root)],
-        cwd=tool.parents[1],
-        env={**os.environ, "GOWORK": "off"},
+        ["git", "merge-base", "--is-ancestor", ancestor, descendant],
+        cwd=root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    return result.returncode == 0
+
+
+def git_tree(root: Path, commit: str) -> str:
+    result = subprocess.run(
+        ["git", "rev-parse", f"{commit}^{{tree}}"],
+        cwd=root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise AcceptanceError(
+            f"cannot inspect immutable revision tree {commit}: "
+            f"{result.stderr.strip()}"
+        )
+    return result.stdout.strip()
+
+
+def validate_reviewed_revision(
+    root: Path,
+    evidence: object,
+    red_commit: str,
+) -> None:
+    if not isinstance(evidence, dict):
+        raise AcceptanceError("reviewed revision evidence is missing")
+    repository = evidence.get("repository")
+    pull_number = evidence.get("pull_request")
+    if not isinstance(repository, str) or not isinstance(pull_number, int):
+        raise AcceptanceError("reviewed revision repository or PR is invalid")
+    result = subprocess.run(
+        [
+            "gh",
+            "pr",
+            "view",
+            str(pull_number),
+            "--repo",
+            repository,
+            "--json",
+            "number,state,baseRefName,headRefOid,mergeCommit,mergedAt",
+        ],
+        cwd=root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise AcceptanceError(
+            f"cannot verify reviewed PR revision: {result.stderr.strip()}"
+        )
+    try:
+        pull_request = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise AcceptanceError("reviewed PR evidence is invalid JSON") from exc
+    reviewed_head = str(evidence.get("reviewed_head_sha", ""))
+    squash_merge = str(evidence.get("squash_merge_sha", ""))
+    ensure_full_history(root)
+    reviewed_ref = fetch_reviewed_pr_head(
+        root,
+        pull_number,
+        reviewed_head,
+    )
+    for commit in (red_commit, squash_merge):
+        ensure_git_object(root, commit)
+    validate_reviewed_revision_payload(
+        evidence,
+        pull_request,
+        red_is_ancestor_of_reviewed_head=git_is_ancestor(
+            root,
+            red_commit,
+            reviewed_ref,
+        ),
+        reviewed_head_tree=git_tree(root, reviewed_ref),
+        squash_merge_tree=git_tree(root, squash_merge),
+        squash_merge_is_ancestor_of_head=git_is_ancestor(
+            root,
+            squash_merge,
+            "HEAD",
+        ),
+    )
+
+
+def go_tool_context(root: Path) -> tuple[Path, Path, dict[str, str]]:
+    tool_root = Path(__file__).resolve().parents[1]
+    target_root = root.resolve()
+    return tool_root, target_root, {
+        **os.environ,
+        "GOWORK": "off",
+        "PWD": str(tool_root),
+    }
+
+
+def test_evidence(root: Path) -> dict[str, object]:
+    tool_root, target_root, environment = go_tool_context(root)
+    result = subprocess.run(
+        ["go", "run", "./scripts/acceptance_evidence", str(target_root)],
+        cwd=tool_root,
+        env=environment,
         check=False,
         capture_output=True,
         text=True,
@@ -406,9 +650,17 @@ def validate_gate_contract(
         "operability_and_replay_trace",
     ):
         raise AcceptanceError("operability gate evidence changed")
+    red = gates.get("TDD_RED")
+    if not isinstance(red, dict) or not isinstance(red.get("commit_sha"), str):
+        raise AcceptanceError("TDD_RED evidence is missing")
+    validate_reviewed_revision(
+        root,
+        gates.get("reviewed_revision"),
+        str(red["commit_sha"]),
+    )
     validate_tdd_red(
         root,
-        gates.get("TDD_RED"),
+        red,
         required_tests,
         verify_tdd_hosted,
     )
@@ -492,13 +744,6 @@ def validate_tdd_red(
             "TDD_RED tree lacks mapped tests: "
             f"{sorted(required_tests - red_tests)}"
         )
-    ancestor = subprocess.run(
-        ["git", "merge-base", "--is-ancestor", commit, "HEAD"],
-        cwd=root,
-        check=False,
-    )
-    if ancestor.returncode != 0:
-        raise AcceptanceError("TDD_RED commit is not an ancestor of HEAD")
     run_url = value.get("hosted_ci_run_url")
     if not isinstance(run_url, str):
         raise AcceptanceError("TDD_RED hosted CI URL is missing")
@@ -682,6 +927,35 @@ def validate_doc_hosted_payload(
         )
 
 
+def validate_declared_test_files(
+    actual: object,
+    declared: object,
+) -> None:
+    if (
+        not isinstance(actual, dict)
+        or not isinstance(declared, dict)
+        or not declared
+    ):
+        raise AcceptanceError("test-file evidence is missing")
+    invalid = {
+        path: {
+            "expected": digest,
+            "actual": actual.get(path),
+        }
+        for path, digest in declared.items()
+        if (
+            not isinstance(path, str)
+            or not isinstance(digest, str)
+            or re.fullmatch(r"[0-9a-f]{64}", digest) is None
+            or actual.get(path) != digest
+        )
+    }
+    if invalid:
+        raise AcceptanceError(
+            f"owned test-file inventory or content changed: {invalid}"
+        )
+
+
 def validate_body_evidence(
     root: Path,
     document: dict[str, object],
@@ -691,8 +965,10 @@ def validate_body_evidence(
     if evidence.get("test_mains"):
         raise AcceptanceError(f"TestMain is forbidden: {evidence['test_mains']}")
     declared_files = document.get("test_file_sha256")
-    if evidence.get("test_files") != declared_files:
-        raise AcceptanceError("test-file inventory or content changed")
+    validate_declared_test_files(
+        evidence.get("test_files"),
+        declared_files,
+    )
     available = set(evidence.get("tests", {}))
     missing = required_tests - available
     if missing:

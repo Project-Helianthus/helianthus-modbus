@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -20,6 +21,234 @@ def event(action: str, test: str) -> str:
 
 
 class M102AcceptanceTests(unittest.TestCase):
+    def test_m1_02_owns_declared_tests_without_blocking_later_tests(self) -> None:
+        digest = "a" * 64
+        validator.validate_declared_test_files(
+            {
+                "tcp_owned_test.go": digest,
+                "rtu_later_milestone_test.go": "b" * 64,
+            },
+            {"tcp_owned_test.go": digest},
+        )
+        with self.assertRaises(validator.AcceptanceError):
+            validator.validate_declared_test_files(
+                {"tcp_owned_test.go": "c" * 64},
+                {"tcp_owned_test.go": digest},
+            )
+
+    def test_go_tool_context_normalizes_symlinked_checkout(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            link = Path(temp) / "checkout"
+            link.symlink_to(ROOT, target_is_directory=True)
+            tool_root, target_root, environment = validator.go_tool_context(link)
+            self.assertEqual(tool_root, ROOT.resolve())
+            self.assertEqual(target_root, ROOT.resolve())
+            self.assertEqual(environment["PWD"], str(tool_root))
+            self.assertEqual(environment["GOWORK"], "off")
+
+    def test_shallow_checkout_materializes_merge_ancestry(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "source"
+            remote = root / "remote.git"
+            checkout = root / "checkout"
+            subprocess.run(
+                ["git", "init", "-q", "--initial-branch=main", source],
+                check=True,
+            )
+            subprocess.run(
+                ["git", "-C", source, "config", "user.name", "Fixture"],
+                check=True,
+            )
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    source,
+                    "config",
+                    "user.email",
+                    "fixture@example.invalid",
+                ],
+                check=True,
+            )
+            fixture = source / "fixture.txt"
+            fixture.write_text("base\n", encoding="utf-8")
+            subprocess.run(["git", "-C", source, "add", "."], check=True)
+            subprocess.run(
+                ["git", "-C", source, "commit", "-qm", "base"],
+                check=True,
+            )
+            fixture.write_text("merge\n", encoding="utf-8")
+            subprocess.run(
+                ["git", "-C", source, "commit", "-qam", "merge"],
+                check=True,
+            )
+            merge_sha = subprocess.run(
+                ["git", "-C", source, "rev-parse", "HEAD"],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+            subprocess.run(
+                ["git", "-C", source, "switch", "-qc", "feature"],
+                check=True,
+            )
+            fixture.write_text("feature\n", encoding="utf-8")
+            subprocess.run(
+                ["git", "-C", source, "commit", "-qam", "feature"],
+                check=True,
+            )
+            subprocess.run(
+                ["git", "clone", "-q", "--bare", source, remote],
+                check=True,
+            )
+            subprocess.run(
+                [
+                    "git",
+                    "clone",
+                    "-q",
+                    "--depth=1",
+                    "--branch=feature",
+                    f"file://{remote}",
+                    checkout,
+                ],
+                check=True,
+            )
+            self.assertFalse(
+                validator.git_is_ancestor(checkout, merge_sha, "HEAD")
+            )
+            validator.ensure_full_history(checkout)
+            self.assertTrue(
+                validator.git_is_ancestor(checkout, merge_sha, "HEAD")
+            )
+
+    def reviewed_revision_fixture(
+        self,
+    ) -> tuple[dict[str, object], dict[str, object]]:
+        evidence = {
+            "repository": "Project-Helianthus/helianthus-modbus",
+            "pull_request": 6,
+            "reviewed_head_sha": (
+                "0aac61ddad62f664b47900334c48803587183fa3"
+            ),
+            "reviewed_head_tree_sha": (
+                "ac81a5294a84a1783cb84f56cfe1ba455291c1ee"
+            ),
+            "squash_merge_sha": (
+                "467229104bfe34ca90aa653ca22ad79da4fa9a32"
+            ),
+            "squash_merge_tree_sha": (
+                "ac81a5294a84a1783cb84f56cfe1ba455291c1ee"
+            ),
+        }
+        pull_request = {
+            "number": 6,
+            "state": "MERGED",
+            "baseRefName": "main",
+            "headRefOid": evidence["reviewed_head_sha"],
+            "mergeCommit": {"oid": evidence["squash_merge_sha"]},
+            "mergedAt": "2026-07-28T13:41:17Z",
+        }
+        return evidence, pull_request
+
+    def test_squash_merge_preserves_reviewed_tdd_chain(self) -> None:
+        evidence, pull_request = self.reviewed_revision_fixture()
+        validator.validate_reviewed_revision_payload(
+            evidence,
+            pull_request,
+            red_is_ancestor_of_reviewed_head=True,
+            reviewed_head_tree=str(evidence["reviewed_head_tree_sha"]),
+            squash_merge_tree=str(evidence["squash_merge_tree_sha"]),
+            squash_merge_is_ancestor_of_head=True,
+        )
+
+    def test_squash_merge_rejects_stale_reviewed_head(self) -> None:
+        evidence, pull_request = self.reviewed_revision_fixture()
+        pull_request["headRefOid"] = "1" * 40
+        with self.assertRaises(validator.AcceptanceError):
+            validator.validate_reviewed_revision_payload(
+                evidence,
+                pull_request,
+                red_is_ancestor_of_reviewed_head=True,
+                reviewed_head_tree=str(evidence["reviewed_head_tree_sha"]),
+                squash_merge_tree=str(evidence["squash_merge_tree_sha"]),
+                squash_merge_is_ancestor_of_head=True,
+            )
+
+    def test_squash_merge_rejects_tree_mismatch(self) -> None:
+        evidence, pull_request = self.reviewed_revision_fixture()
+        with self.assertRaises(validator.AcceptanceError):
+            validator.validate_reviewed_revision_payload(
+                evidence,
+                pull_request,
+                red_is_ancestor_of_reviewed_head=True,
+                reviewed_head_tree=str(evidence["reviewed_head_tree_sha"]),
+                squash_merge_tree="2" * 40,
+                squash_merge_is_ancestor_of_head=True,
+            )
+
+    def test_squash_merge_rejects_reviewed_head_tree_mismatch(self) -> None:
+        evidence, pull_request = self.reviewed_revision_fixture()
+        with self.assertRaises(validator.AcceptanceError):
+            validator.validate_reviewed_revision_payload(
+                evidence,
+                pull_request,
+                red_is_ancestor_of_reviewed_head=True,
+                reviewed_head_tree="4" * 40,
+                squash_merge_tree=str(evidence["squash_merge_tree_sha"]),
+                squash_merge_is_ancestor_of_head=True,
+            )
+
+    def test_squash_merge_requires_merged_main_pr(self) -> None:
+        evidence, pull_request = self.reviewed_revision_fixture()
+        pull_request["state"] = "OPEN"
+        with self.assertRaises(validator.AcceptanceError):
+            validator.validate_reviewed_revision_payload(
+                evidence,
+                pull_request,
+                red_is_ancestor_of_reviewed_head=True,
+                reviewed_head_tree=str(evidence["reviewed_head_tree_sha"]),
+                squash_merge_tree=str(evidence["squash_merge_tree_sha"]),
+                squash_merge_is_ancestor_of_head=True,
+            )
+
+    def test_squash_merge_rejects_wrong_merge_sha(self) -> None:
+        evidence, pull_request = self.reviewed_revision_fixture()
+        pull_request["mergeCommit"] = {"oid": "3" * 40}
+        with self.assertRaises(validator.AcceptanceError):
+            validator.validate_reviewed_revision_payload(
+                evidence,
+                pull_request,
+                red_is_ancestor_of_reviewed_head=True,
+                reviewed_head_tree=str(evidence["reviewed_head_tree_sha"]),
+                squash_merge_tree=str(evidence["squash_merge_tree_sha"]),
+                squash_merge_is_ancestor_of_head=True,
+            )
+
+    def test_squash_merge_must_retain_red_ancestry_on_reviewed_head(self) -> None:
+        evidence, pull_request = self.reviewed_revision_fixture()
+        with self.assertRaises(validator.AcceptanceError):
+            validator.validate_reviewed_revision_payload(
+                evidence,
+                pull_request,
+                red_is_ancestor_of_reviewed_head=False,
+                reviewed_head_tree=str(evidence["reviewed_head_tree_sha"]),
+                squash_merge_tree=str(evidence["squash_merge_tree_sha"]),
+                squash_merge_is_ancestor_of_head=True,
+            )
+
+    def test_squash_merge_must_be_ancestor_of_current_head(self) -> None:
+        evidence, pull_request = self.reviewed_revision_fixture()
+        with self.assertRaises(validator.AcceptanceError):
+            validator.validate_reviewed_revision_payload(
+                evidence,
+                pull_request,
+                red_is_ancestor_of_reviewed_head=True,
+                reviewed_head_tree=str(evidence["reviewed_head_tree_sha"]),
+                squash_merge_tree=str(evidence["squash_merge_tree_sha"]),
+                squash_merge_is_ancestor_of_head=False,
+            )
+
     def test_skipped_required_subtest_is_rejected(self) -> None:
         output = "\n".join(
             (

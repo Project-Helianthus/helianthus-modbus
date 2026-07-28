@@ -39,6 +39,12 @@ type RTUReadResponseADU struct {
 	response ReadRegistersResponse
 }
 
+// RTUDeviceIDResponseADU retains a decoded Device ID segment and exact frame.
+type RTUDeviceIDResponseADU struct {
+	adu     RTUADU
+	segment DeviceIDSegment
+}
+
 // Bytes returns an independent copy of the exact RTU response frame.
 func (adu RTUReadResponseADU) Bytes() []byte {
 	return adu.adu.Bytes()
@@ -51,10 +57,34 @@ func (adu RTUReadResponseADU) Response() ReadRegistersResponse {
 	return response
 }
 
+// Bytes returns an independent copy of the exact RTU response frame.
+func (adu RTUDeviceIDResponseADU) Bytes() []byte {
+	return adu.adu.Bytes()
+}
+
+// Segment returns a deep copy of the decoded Device ID segment.
+func (adu RTUDeviceIDResponseADU) Segment() DeviceIDSegment {
+	segment := adu.segment
+	segment.objects = cloneDeviceIDObjects(segment.objects)
+	return segment
+}
+
 // EncodeRTUReadADU encodes one typed FC03/FC04 request with CRC-16/Modbus.
 func EncodeRTUReadADU(
 	unitID byte,
 	request ReadRegistersRequest,
+) ([]byte, error) {
+	pdu, err := request.EncodePDU()
+	if err != nil {
+		return nil, err
+	}
+	return encodeRTUADU(unitID, pdu)
+}
+
+// EncodeRTUDeviceIDAccessADU encodes one typed FC2B/MEI0E request with CRC.
+func EncodeRTUDeviceIDAccessADU(
+	unitID byte,
+	request DeviceIDRequest,
 ) ([]byte, error) {
 	pdu, err := request.EncodePDU()
 	if err != nil {
@@ -124,6 +154,44 @@ func DecodeRTUReadResponseADU(
 		return RTUReadResponseADU{adu: adu}, err
 	}
 	return RTUReadResponseADU{adu: adu, response: response}, nil
+}
+
+// DecodeRTUDeviceIDResponseADU validates CRC, identity, and one exact segment.
+func DecodeRTUDeviceIDResponseADU(
+	expectedUnitID byte,
+	request DeviceIDRequest,
+	frame []byte,
+) (RTUDeviceIDResponseADU, error) {
+	if expectedUnitID == 0 || expectedUnitID > 247 {
+		return RTUDeviceIDResponseADU{}, protocolError(
+			ErrorInvalidRequest,
+			FunctionEncapsulatedInterface,
+			0,
+			"unit_id",
+			0,
+		)
+	}
+	if err := validateDeviceIDRequest(request); err != nil {
+		return RTUDeviceIDResponseADU{}, err
+	}
+	adu, err := decodeRTUADU(frame)
+	if err != nil {
+		return RTUDeviceIDResponseADU{adu: adu}, err
+	}
+	if adu.unitID != expectedUnitID {
+		return RTUDeviceIDResponseADU{adu: adu}, protocolError(
+			ErrorMalformedResponse,
+			FunctionEncapsulatedInterface,
+			0,
+			"unit_id",
+			0,
+		)
+	}
+	segment, err := DecodeDeviceIDSegment(request, adu.pdu)
+	if err != nil {
+		return RTUDeviceIDResponseADU{adu: adu}, err
+	}
+	return RTUDeviceIDResponseADU{adu: adu, segment: segment}, nil
 }
 
 func decodeRTUADU(frame []byte) (RTUADU, error) {

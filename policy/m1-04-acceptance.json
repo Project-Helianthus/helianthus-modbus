@@ -1,0 +1,181 @@
+{
+  "schema": "helianthus.modbus.milestone-acceptance/v2",
+  "milestone": "FMV3-M1-04",
+  "canonical_sources": {
+    "plan": {
+      "repository": "Project-Helianthus/helianthus-execution-plans",
+      "commit_sha": "0576544bd8851c4e32da3ca7c401270eee43ef5c",
+      "path": "fronius-modbus-multivendor-v3-w29-26.locked/plan.yaml",
+      "artifact_sha256": "c36f66d8e9b2952b9464fa5a4d64e86a314dba331cbc59d833fdf8edfd1de7d8",
+      "task_block_sha256": "3617fef8b6f567a0c66200fc340cb9d41a2a5c6592bd4b619415218a65d691e2"
+    },
+    "companion": {
+      "repository": "Project-Helianthus/helianthus-docs-ebus",
+      "commit_sha": "711a556fee344c6fe7f1ecf3253fcdb3f5f22d06",
+      "manifest_path": "docs/platform/manifests/modbus-foundation-profile-contract-v1.json",
+      "manifest_sha256": "c411e3e8a464e4b9d3a59d3f5a0c82b57e176e24dec9550b9bc0c8b3e4b28c70"
+    },
+    "authorization": {
+      "repository": "Project-Helianthus/helianthus-execution-plans",
+      "issue": 71,
+      "comment": 5084046142,
+      "body_sha256": "3333171904c729e2ab317637b37c0fac570df2c465419b1bc5b5d8fedef83356",
+      "author": "d3vi1",
+      "author_associations": [
+        "MEMBER",
+        "CONTRIBUTOR"
+      ],
+      "created_at": "2026-07-26T15:04:12Z",
+      "updated_at": "2026-07-26T15:04:12Z",
+      "authorized_issue": "FMV3-M1-04"
+    }
+  },
+  "requirements": [
+    {
+      "id": "closed_transport_recovery_matrix",
+      "source": "execution_plan#transport_recovery_matrix",
+      "tests": [
+        "TestTCPTransportWriteResultClassificationLifecycle",
+        "TestResponseWaitAbandonmentTombstonesAndDropsLateResponse",
+        "TestTombstoneExhaustionClosesTransportAndReleasesPool",
+        "TestRTUPartialWriteQuarantine",
+        "TestRTULateSameShapeFrameIsDiscarded",
+        "TestRTUQuiescenceFailureRequiresExplicitRecovery"
+      ]
+    },
+    {
+      "id": "tcp_fc2b_mei0e_transport",
+      "source": "execution_plan#identity_operation_matrix.tcp",
+      "tests": [
+        "TestTCPDeviceIDTraversalAcrossTransportFrames",
+        "TestTCPDeviceIDExceptionAndMalformedTransportResponses",
+        "TestTCPEndpointDeviceIDTraversalPublishesOnlyCompleteAggregate",
+        "TestTCPEndpointDeviceIDExceptionAndMalformedAreTerminal",
+        "TestTCPEndpointDeviceIDQueuedCancellationReleasesScheduler",
+        "TestTCPEndpointDeviceIDCancellationOwnsWriteBoundary",
+        "TestTCPEndpointDeviceIDCancellationAfterWriteBeforeWaitingTombstones",
+        "TestTCPEndpointDeviceIDWaitingCancellationDropsLateResponse",
+        "TestTCPEndpointDeviceIDResponseAndCancellationLinearize",
+        "TestTCPEndpointDeviceIDProvableZeroRetryRestartsTraversal",
+        "TestTCPEndpointDeviceIDContinuationFailureRetryRestartsAtInitialCursor",
+        "TestTCPEndpointDeviceIDMalformedContinuationReleasesCapacity"
+      ]
+    },
+    {
+      "id": "rtu_fc2b_mei0e_transport",
+      "source": "execution_plan#identity_operation_matrix.rtu",
+      "tests": [
+        "TestRTUDeviceIDAccessADUFramingAndSegmentDecode",
+        "TestRTUDeviceIDResponseRetainsExceptionAndMalformedRawFrame",
+        "TestRTUDeviceIDEndpointDeliversSegmentWithWireProvenance",
+        "TestRTUDeviceIDMalformedCandidateTerminalizesWithWireIdentity",
+        "TestRTUDeviceIDTraversalAcrossFixtureFrames",
+        "TestRTUDeviceIDExceptionTerminalizesWithWireIdentity",
+        "TestRTUEndFrameOperationTypeMismatchDoesNotConsumeFrame"
+      ]
+    },
+    {
+      "id": "bounded_transport_stress",
+      "source": "companion#security-and-resource-invariants",
+      "tests": [
+        "TestConnectionOwnerEnforcesInFlightBound",
+        "TestSchedulerOwnsAggregateCoalescedDependentBound",
+        "TestTombstoneExhaustionClosesSocket",
+        "TestAggregateDeviceIDRejectsPartialOrNonProgressingTraversal",
+        "TestDeviceIDLimitsMustBePositiveAndBounded",
+        "TestRTUDiscardBudgetResetsPerQuarantineEpisode",
+        "TestRTUEventSequenceExhaustionFailsBeforeAdmission"
+      ]
+    },
+    {
+      "id": "fixture_only_rtu_independent_tcp",
+      "source": "companion#modbus-rtu-contract.physical-qualification",
+      "tests": [
+        "TestRTUCapabilityIsFixtureOnlyExperimentalAndDefaultDisabled",
+        "TestRTUExperimentalOptInCannotClaimPhysicalQualification",
+        "TestTCPRemainsAvailableWhenRTUCapabilityIsDisabled"
+      ]
+    }
+  ],
+  "gates": {
+    "TDD_RED": {
+      "base_sha": "f4b4b9b1c7eb2d2f7bab9e29255ca97260b40c5d",
+      "test_only_commits": [
+        "1cdbfe75fc5a102d7f71ac612e305bec60b34912",
+        "2912af6eef9b792106f5385ce79d20c323986cf3"
+      ],
+      "hosted_ci_runs": [
+        {
+          "commit_sha": "1cdbfe75fc5a102d7f71ac612e305bec60b34912",
+          "conclusion": "failure",
+          "url": "https://github.com/Project-Helianthus/helianthus-modbus/actions/runs/30380293017"
+        },
+        {
+          "commit_sha": "2912af6eef9b792106f5385ce79d20c323986cf3",
+          "conclusion": "failure",
+          "url": "https://github.com/Project-Helianthus/helianthus-modbus/actions/runs/30381957094"
+        }
+      ],
+      "red_required_tests": [
+        "TestRTUDeviceIDAccessADUFramingAndSegmentDecode",
+        "TestRTUDeviceIDResponseRetainsExceptionAndMalformedRawFrame",
+        "TestRTUDeviceIDEndpointDeliversSegmentWithWireProvenance",
+        "TestRTUDeviceIDMalformedCandidateTerminalizesWithWireIdentity",
+        "TestTCPEndpointDeviceIDTraversalPublishesOnlyCompleteAggregate"
+      ]
+    },
+    "pull_request": {
+      "repository": "Project-Helianthus/helianthus-modbus",
+      "number": 14,
+      "base": "main",
+      "base_sha": "f4b4b9b1c7eb2d2f7bab9e29255ca97260b40c5d"
+    },
+    "CI": {
+      "commands": [
+        "./scripts/validate_companion_lock.sh",
+        "./scripts/scope_gate.sh",
+        "GOWORK=off go run ./scripts/read_only_surface .",
+        "python3 scripts/validate_m1_02_acceptance.py",
+        "python3 scripts/validate_m1_03_acceptance.py",
+        "python3 scripts/validate_m1_04_acceptance.py",
+        "python3 -m unittest discover -s tests -p 'test_*.py'",
+        "GOWORK=off go vet ./...",
+        "GOWORK=off go build ./...",
+        "GOWORK=off GOOS=linux GOARCH=386 go test -c -o /dev/null .",
+        "GOWORK=off go test -race -count=1 ./..."
+      ]
+    },
+    "doc_gate": {
+      "repository": "Project-Helianthus/helianthus-docs-ebus",
+      "pull_request": 376,
+      "commit_sha": "711a556fee344c6fe7f1ecf3253fcdb3f5f22d06",
+      "required_check_run_url": "https://github.com/Project-Helianthus/helianthus-docs-ebus/actions/runs/30238777804/job/89891563104"
+    },
+    "hardware_conditional": {
+      "required_disposition": "FIXTURE_ONLY_NO_HARDWARE",
+      "physical_evidence_required": false,
+      "supported_claim": false,
+      "enabled_claim": false,
+      "tcp_blocked_by_rtu_hardware": false
+    },
+    "offline_surface": {
+      "physical_io_sites": 0,
+      "gateway_dependencies": 0,
+      "vendor_profile_dependencies": 0,
+      "cgo_files": 0,
+      "go_mod_sha256": "c64fd63d81e8a9c6b013d06f8db676621b3945be57e203bd004910270383617f"
+    },
+    "transport_gate": {
+      "matrix_path": "policy/m1-04-transport-matrix.json",
+      "matrix_sha256": "0813808be5cb07010e9e696a80569a0dfff065639cb66fd2f3eaab4588cb9974",
+      "expected_rows": 21,
+      "unexpected_fail": 0,
+      "unexpected_pass": 0,
+      "skipped": 0
+    }
+  },
+  "test_file_sha256": {
+    "tcp_device_id_endpoint_test.go": "2cf52ae16be8bb92a2090f6ac1aa97254c122d6bcf1c2ec3387364053c490cfc",
+    "transport_conformance_test.go": "c5023cd3ad256865bec8914b25ca3164fee6a702ccfc9d27baa674e593ebf71e"
+  }
+}

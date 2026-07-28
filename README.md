@@ -8,7 +8,14 @@ foundation for Helianthus.
 The repository implements the strict vendor-neutral phase-one PDU layer and
 the bounded Modbus TCP runtime: MBAP streaming, socket ownership, transaction
 correlation, scheduling, pooling, coalescing, cancellation, and recovery.
-Modbus RTU runtime ownership remains separately authorized follow-up work.
+It also implements typed RTU framing, deterministic timing, and a serialized
+offline fixture owner for abandonment, quarantine, and recovery tests.
+
+The RTU capability is experimental, disabled by default, and exactly
+`FIXTURE_ONLY_NO_HARDWARE`. It exposes no serial port, device path, physical
+reader/writer, or hardware-qualified claim. `NewRTUFixtureEndpoint` operates
+only on an in-memory `RTUFixtureLine`; physical RTU admission remains separate
+qualification work.
 
 `NewTCPEndpoint` is the single public construction root for the current
 FC03/FC04 runtime. It owns the connection pool, scheduler, transaction owners,
@@ -66,6 +73,14 @@ The operation allowlist does not imply that every operation has reached every
 runtime layer in M1-02. M1-02 owns the aggregate FC03/FC04 endpoint. M1-04 adds
 bounded FC2B/MEI type 0x0E endpoint execution without exposing a lower-level
 socket bypass.
+
+M1-03 owns typed FC03/FC04 RTU ADUs, CRC-16/Modbus, t1.5/t3.5 timing, and the
+fixture owner state machine. It never opens or writes a physical serial line.
+Possibly transmitted results and full-transmit response-wait abandonment enter
+quarantine before waiter resolution. Quarantine discards every frame and
+releases only after the configured response-latency horizon plus a complete
+inter-frame idle proof. Failed quiescence requires explicit recovery and a new
+transport generation.
 
 Every queued TCP read receives one immutable absolute monotonic deadline.
 Queueing, transport write, response wait, cancellation, and reconnect backoff
@@ -127,8 +142,14 @@ against the exact merged public companion before compiling product code.
 FMV3-M1-02 runtime evidence is machine-checked by
 [`policy/m1-02-acceptance.json`](policy/m1-02-acceptance.json) against that
 pinned contract. The gate executes every mapped test, requires explicit
-run/pass events without skips, and locks the complete Go test-file inventory so
-helpers and harness code cannot drift independently of the reviewed evidence.
+run/pass events without skips, and locks every test file owned by M1-02 while
+allowing later milestone test manifests to own their own files.
+FMV3-M1-03 is independently locked by
+[`policy/m1-03-acceptance.json`](policy/m1-03-acceptance.json) and its
+fixture-only [RTU transport matrix](policy/m1-03-transport-matrix.json). That
+gate proves the RED chain, canonical authorization, offline-only product
+surface, exact `FIXTURE_ONLY_NO_HARDWARE` disposition, and every mapped RTU
+test. It performs no gateway, serial-device, or physical-hardware validation.
 
 The repository follows one issue and one pull request at a time, squash merge,
 strict test-first implementation, and applicable documentation/protocol gates.

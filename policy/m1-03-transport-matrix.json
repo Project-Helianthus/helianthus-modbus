@@ -1,0 +1,84 @@
+{
+  "schema": "helianthus.modbus.transport-gate/v1",
+  "milestone": "FMV3-M1-03",
+  "disposition": "FIXTURE_ONLY_NO_HARDWARE",
+  "execution_surface": "offline_fixture_only",
+  "rows": [
+    {
+      "id": "rtu_provable_zero_no_abandonment",
+      "tests": [
+        "TestRTUProvableZeroNoAbandonment",
+        "TestRTUProvableZeroRetainsTerminalDeadlineCause"
+      ]
+    },
+    {
+      "id": "rtu_partial_write_quarantine",
+      "tests": [
+        "TestRTUPartialWriteQuarantine",
+        "TestRTUUnsafeAnchorIncludesFullTransmitHorizon"
+      ]
+    },
+    {
+      "id": "rtu_indeterminate_error_quarantine",
+      "tests": [
+        "TestRTUIndeterminateErrorQuarantine"
+      ]
+    },
+    {
+      "id": "rtu_cancellation_race_quarantine",
+      "tests": [
+        "TestRTUCancellationRaceQuarantine",
+        "TestRTUTickOwnsCancellationDuringWrite"
+      ]
+    },
+    {
+      "id": "rtu_ambiguous_completion_quarantine",
+      "tests": [
+        "TestRTUAmbiguousCompletionQuarantine",
+        "TestRTUTickOwnsDeadlineDuringWrite"
+      ]
+    },
+    {
+      "id": "rtu_full_transmit_timeout_quarantine",
+      "tests": [
+        "TestRTUFullTransmitTimeoutQuarantine",
+        "TestRTUTickOwnsTimeoutAfterFullTransmit",
+        "TestRTUExpiredCompleteTransmitEntersQuarantine",
+        "TestRTUExpiredResponseCannotBeatTick"
+      ]
+    },
+    {
+      "id": "rtu_full_transmit_cancellation_quarantine",
+      "tests": [
+        "TestRTUFullTransmitCancellationQuarantine",
+        "TestRTUTickOwnsCancellationAfterFullTransmit",
+        "TestRTUExpiredResponseCannotBeatTick"
+      ]
+    },
+    {
+      "id": "rtu_late_same_shape_discarded",
+      "tests": [
+        "TestRTULateSameShapeFrameIsDiscarded",
+        "TestRTULastDiscardedByteRestartsIdleProof",
+        "TestRTUBytesBufferedBeforeAbandonmentExtendIdleProof",
+        "TestRTUMalformedBytesBeforeAbandonmentExtendIdleProof",
+        "TestRTUResponseWaitRequiresT35AfterDecoderRejection",
+        "TestRTUBufferedQuarantineBytesCannotReachSuccessor"
+      ]
+    },
+    {
+      "id": "rtu_quiescence_failure_endpoint_recovery",
+      "tests": [
+        "TestRTUQuiescenceFailureRequiresExplicitRecovery",
+        "TestRTUQuiescenceBoundFailsClosed",
+        "TestRTUTickOwnsQuiescenceExpiry",
+        "TestRTUReceiveOperationsCannotBeatQuiescenceExpiry",
+        "TestRTUQuiescenceBoundaryIsExact",
+        "TestRTUQuarantineDeadlineOverflowFailsClosed",
+        "TestRTUGuardOverflowDoesNotConsumeWireIdentity",
+        "TestRTUDiscardBudgetResetsPerQuarantineEpisode",
+        "TestRTURecoverResetsGenerationScopedAllocators"
+      ]
+    }
+  ]
+}

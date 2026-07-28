@@ -20,6 +20,10 @@ EXPECTED_POLICY = {
         "device_id.go",
         "doc.go",
         "pdu.go",
+        "rtu_adu.go",
+        "rtu_capability.go",
+        "rtu_endpoint.go",
+        "rtu_timing.go",
         "tcp_adu.go",
         "tcp_coalescing.go",
         "tcp_endpoint.go",
@@ -33,10 +37,22 @@ EXPECTED_POLICY = {
             "5bcad6b6af8ba827ee16ea832c7d688e0d851b9dabb42376fefb2a4837bd0d9f"
         ),
         "doc.go": (
-            "9f16ddba12a48cb50566ec16472d9fb170a6894059ffec2ad59b3855836133bc"
+            "81442e486e3d6897b2a3421a41a8af0af18e9891b492eb58fd7294ad999edf73"
         ),
         "pdu.go": (
             "6e10a628f3f79d5c19c7c51307308179644364a5ba2c698e39e4ec49ef4e1d8b"
+        ),
+        "rtu_adu.go": (
+            "3d0fe143eea63655a13af5027ef3ff6f349af7fd1a2b92bc2550e4b5c02c4fb2"
+        ),
+        "rtu_capability.go": (
+            "33f8427bccd92b337afe1c8947ed2809f0262db7e3a9697629ef593a6ab2b010"
+        ),
+        "rtu_endpoint.go": (
+            "0e0a0c84befcdd1394ee8d060c63158a855f5db2c4887f352dbee1e26ae12b44"
+        ),
+        "rtu_timing.go": (
+            "daea0680aa70f1a552fc6facdd35e54161728c673625088c599951d560155231"
         ),
         "tcp_adu.go": (
             "29468e151d3b241ac49cda6e97be2c1e78561bb41703be347ff0dbf17650c42b"
@@ -65,12 +81,15 @@ EXPECTED_POLICY = {
             "903cfc5df5569c316186032ab2da644dcb664a51548b064e3d3e67c945b96880"
         ),
         "scripts/read_only_surface/main.go": (
-            "e8a3d211d7ad9f70edab01bb552087e12c7e1ea97bafbeab48700241737f86c8"
+            "d87d51b240cbf80605b7c939acde62f4c5d7bc92fac63bdf0ea67d527f7c3980"
         ),
     },
     "trusted_python_tool_sha256": {
         "scripts/validate_m1_02_acceptance.py": (
             "f4f9e1bb0c5121d734380720c425efa17f739fc7edc84cf2b6efc267574b4eae"
+        ),
+        "scripts/validate_m1_03_acceptance.py": (
+            "4593b2857541e8fe463d84b965b4447018be0cd24bd55fc8f86cd752de92c70c"
         ),
     },
     "allowed_operations": [
@@ -114,6 +133,7 @@ TRUSTED_GO_TOOL_FILES = {
 }
 TRUSTED_PYTHON_TOOL_FILES = {
     "scripts/validate_m1_02_acceptance.py",
+    "scripts/validate_m1_03_acceptance.py",
 }
 
 
@@ -199,6 +219,20 @@ def validate_read_only_wire_surface(root: Path) -> None:
             f"unexpected raw TCP encoder sites: {raw_encoder_sites}"
         )
 
+    raw_rtu_encoder_sites = [
+        (relative, line.strip())
+        for relative, source in sources.items()
+        for line in source.splitlines()
+        if re.search(r"\bencodeRTUADU\s*\(", line)
+    ]
+    if raw_rtu_encoder_sites != [
+        ("rtu_adu.go", "return encodeRTUADU(unitID, pdu)"),
+        ("rtu_adu.go", "func encodeRTUADU(unitID byte, pdu []byte) ([]byte, error) {"),
+    ]:
+        raise PolicyError(
+            f"unexpected raw RTU encoder sites: {raw_rtu_encoder_sites}"
+        )
+
     function_codes: dict[str, int] = {}
     declaration = re.compile(
         r"^\s*(\w+)\s+FunctionCode\s*=\s*(0x[0-9a-fA-F]+|\d+)\s*$"
@@ -229,6 +263,7 @@ def validate_read_only_wire_surface(root: Path) -> None:
     expected_byte_apis = {
         "device_id.go": ["EncodePDU"],
         "pdu.go": ["EncodePDU"],
+        "rtu_adu.go": ["Bytes", "Bytes", "EncodeRTUReadADU", "PDU"],
         "tcp_adu.go": [
             "Bytes",
             "EncodeTCPDeviceIDAccessADU",

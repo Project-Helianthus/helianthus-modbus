@@ -49,6 +49,7 @@ func main() {
 		}
 		validateImports(fset, file)
 		base := filepath.Base(path)
+		validateRTUImports(fset, base, file)
 		for _, declaration := range file.Decls {
 			function, ok := declaration.(*ast.FuncDecl)
 			if !ok || function.Body == nil {
@@ -341,6 +342,65 @@ func validateImports(fset *token.FileSet, file *ast.File) {
 			fail("%s: forbidden capability import %s", location(fset, imported), path)
 		}
 	}
+}
+
+func validateRTUImports(fset *token.FileSet, base string, file *ast.File) {
+	expectedByFile := map[string]map[string]bool{
+		"rtu_adu.go": {
+			"sync": true,
+			"time": true,
+		},
+		"rtu_capability.go": {},
+		"rtu_endpoint.go": {
+			"context":      true,
+			"encoding/hex": true,
+			"errors":       true,
+			"math":         true,
+			"sync":         true,
+			"sync/atomic":  true,
+			"time":         true,
+		},
+		"rtu_timing.go": {
+			"math": true,
+			"time": true,
+		},
+	}
+	expected, guarded := expectedByFile[base]
+	if !guarded {
+		return
+	}
+	actual := make(map[string]bool, len(file.Imports))
+	for _, imported := range file.Imports {
+		path, err := strconv.Unquote(imported.Path.Value)
+		if err != nil {
+			fail("%s: malformed RTU import", location(fset, imported))
+		}
+		actual[path] = true
+	}
+	if !equalImportSets(actual, expected) {
+		fail("%s: RTU import allowlist changed: %v", base, sortedKeys(actual))
+	}
+}
+
+func equalImportSets(actual map[string]bool, expected map[string]bool) bool {
+	if len(actual) != len(expected) {
+		return false
+	}
+	for path := range expected {
+		if !actual[path] {
+			return false
+		}
+	}
+	return true
+}
+
+func sortedKeys(values map[string]bool) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func allowedConnCall(function string, method string, arguments int) bool {

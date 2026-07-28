@@ -119,20 +119,27 @@ class ScopePolicyTests(unittest.TestCase):
                 validator.validate_product_lock(root, policy)
 
     def test_acceptance_validator_is_content_locked(self) -> None:
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            relative = "scripts/validate_m1_02_acceptance.py"
-            target = root / relative
-            target.parent.mkdir(parents=True)
-            target.write_bytes((SCRIPT.parents[1] / relative).read_bytes())
-            policy = copy.deepcopy(validator.EXPECTED_POLICY)
-            policy["trusted_python_tool_sha256"][relative] = hashlib.sha256(
-                target.read_bytes()
-            ).hexdigest()
-            validator.validate_python_tool_lock(root, policy)
-            target.write_text("# weakened\n", encoding="utf-8")
-            with self.assertRaises(validator.PolicyError):
-                validator.validate_python_tool_lock(root, policy)
+        for changed in validator.TRUSTED_PYTHON_TOOL_FILES:
+            with self.subTest(changed=changed):
+                with tempfile.TemporaryDirectory() as temp:
+                    root = Path(temp)
+                    policy = copy.deepcopy(validator.EXPECTED_POLICY)
+                    for relative in validator.TRUSTED_PYTHON_TOOL_FILES:
+                        target = root / relative
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        target.write_bytes(
+                            (SCRIPT.parents[1] / relative).read_bytes()
+                        )
+                        policy["trusted_python_tool_sha256"][relative] = (
+                            hashlib.sha256(target.read_bytes()).hexdigest()
+                        )
+                    validator.validate_python_tool_lock(root, policy)
+                    (root / changed).write_text(
+                        "# weakened\n",
+                        encoding="utf-8",
+                    )
+                    with self.assertRaises(validator.PolicyError):
+                        validator.validate_python_tool_lock(root, policy)
 
     def test_test_file_is_not_product_code_under_product_lock(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

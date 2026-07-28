@@ -623,7 +623,7 @@ def validate_tdd_hosted_binding(
     red_head: str,
     run: dict[str, object],
     pulls: object,
-) -> None:
+) -> str:
     if run != {
         "id": 30367710672,
         "event": "pull_request",
@@ -638,7 +638,6 @@ def validate_tdd_hosted_binding(
         "number": 10,
         "base_ref": "main",
         "base_sha": "79f9c6da6efd5be9f3e31ddf62720c1a3d0bf3e7",
-        "head_sha": red_head,
     }
     if not isinstance(pulls, list) or len(pulls) != 1:
         raise AcceptanceError("hosted RTU TDD_RED PR/base binding changed")
@@ -647,9 +646,12 @@ def validate_tdd_hosted_binding(
         not isinstance(pull, dict)
         or pull.get("state") not in {"open", "closed"}
         or {key: pull.get(key) for key in expected_pull} != expected_pull
-        or set(pull) != {*expected_pull, "state"}
+        or set(pull) != {*expected_pull, "state", "head_sha"}
+        or not isinstance(pull.get("head_sha"), str)
+        or re.fullmatch(r"[0-9a-f]{40}", str(pull["head_sha"])) is None
     ):
         raise AcceptanceError("hosted RTU TDD_RED PR/base binding changed")
+    return str(pull["head_sha"])
 
 
 def validate_tdd(
@@ -797,11 +799,14 @@ def validate_tdd(
         json.loads(result.stdout),
         logs.stdout,
     )
-    validate_tdd_hosted_binding(
+    associated_head = validate_tdd_hosted_binding(
         commits[-1],
         json.loads(run.stdout),
         json.loads(pulls.stdout),
     )
+    base.ensure_git_object(root, associated_head)
+    if not base.git_is_ancestor(root, commits[-1], associated_head):
+        raise AcceptanceError("RTU TDD_RED is not ancestral to associated PR head")
 
 
 def validate_pull_request(

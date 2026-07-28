@@ -271,7 +271,7 @@ class M103AcceptanceTests(unittest.TestCase):
                 "base_sha": (
                     "79f9c6da6efd5be9f3e31ddf62720c1a3d0bf3e7"
                 ),
-                "head_sha": red,
+                "head_sha": "b04fa221ff638b5cbb4bdcb8b08f5919643524fc",
             }
         ]
         validator.validate_tdd_hosted_binding(red, run, pulls)

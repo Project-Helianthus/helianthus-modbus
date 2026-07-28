@@ -89,7 +89,7 @@ EXPECTED_POLICY = {
             "f4f9e1bb0c5121d734380720c425efa17f739fc7edc84cf2b6efc267574b4eae"
         ),
         "scripts/validate_m1_03_acceptance.py": (
-            "b9679c14502cb90737aaa2f891c9654aa8dec1705e99cdb7a9eba5e1cb6b316d"
+            "0d1982cbe0f6bf7ff8c6bb46d8031677c8955ad2dec66d6ca4e79259ff29c16e"
         ),
     },
     "allowed_operations": [

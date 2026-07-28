@@ -246,29 +246,43 @@ def parse_authorization(body: str) -> dict[str, str]:
 def validate_authorization(payload: dict[str, object]) -> None:
     body = payload.get("body")
     user = payload.get("user")
-    if (
-        not isinstance(body, str)
-        or payload.get("id") != AUTHORIZATION_SOURCE["comment"]
-        or not isinstance(user, dict)
-        or user.get("login") != AUTHORIZATION_SOURCE["author"]
-        or payload.get("author_association")
-        != AUTHORIZATION_SOURCE["author_association"]
-        or payload.get("created_at") != AUTHORIZATION_SOURCE["created_at"]
-        or payload.get("updated_at") != AUTHORIZATION_SOURCE["updated_at"]
-        or base.sha256(body.encode("utf-8"))
-        != AUTHORIZATION_SOURCE["body_sha256"]
-        or payload.get("issue_url")
-        != (
+    actual = {
+        "id": payload.get("id"),
+        "body_sha256": (
+            base.sha256(body.encode("utf-8"))
+            if isinstance(body, str)
+            else None
+        ),
+        "author": user.get("login") if isinstance(user, dict) else None,
+        "author_association": payload.get("author_association"),
+        "created_at": payload.get("created_at"),
+        "updated_at": payload.get("updated_at"),
+        "issue_url": payload.get("issue_url"),
+        "html_url": payload.get("html_url"),
+    }
+    expected_provenance = {
+        "id": AUTHORIZATION_SOURCE["comment"],
+        "body_sha256": AUTHORIZATION_SOURCE["body_sha256"],
+        "author": AUTHORIZATION_SOURCE["author"],
+        "author_association": AUTHORIZATION_SOURCE["author_association"],
+        "created_at": AUTHORIZATION_SOURCE["created_at"],
+        "updated_at": AUTHORIZATION_SOURCE["updated_at"],
+        "issue_url": (
             "https://api.github.com/repos/Project-Helianthus/"
             "helianthus-execution-plans/issues/71"
-        )
-        or payload.get("html_url")
-        != (
+        ),
+        "html_url": (
             "https://github.com/Project-Helianthus/"
             "helianthus-execution-plans/issues/71#issuecomment-5084046075"
-        )
+        ),
+    }
+    if (
+        not isinstance(body, str)
+        or actual != expected_provenance
     ):
-        raise AcceptanceError("execution authorization provenance changed")
+        raise AcceptanceError(
+            f"execution authorization provenance changed: {actual}"
+        )
     fields = parse_authorization(body)
     expected = {
         "plan_repo": PLAN_SOURCE["repository"],

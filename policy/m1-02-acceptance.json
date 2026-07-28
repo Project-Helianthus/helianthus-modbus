@@ -227,6 +227,6 @@
     "tcp_owner_test.go": "cd3d6e2c5a3742844f449df1615ef88611353249def1d99fd550567d834e943a",
     "tcp_pool_test.go": "c855455fdb7a3dc9c186d7e14592385d598f40cf8f699ecb8af518ed07824879",
     "tcp_scheduler_test.go": "52a3715e2a9e0f47ea583a123d6e1bb7659ccf239e3b3197a160743a5a7bea2d",
-    "tcp_transport_test.go": "3d5a89e6a125a8b710153c9a4ae1ebe5187807256cfc7a6aab0af16b18613b9c"
+    "tcp_transport_test.go": "20fb80f4729614974ed9056bcd63138bf04e19b41a4f0f21bf9e6f16970633f5"
   }
 }

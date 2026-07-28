@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"reflect"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -823,6 +824,83 @@ func TestTCPTransportAfterFuncStopRaceCannotLoseCancellation(t *testing.T) {
 		t.Fatal("stop-race cancellation reused tombstoned transaction")
 	}
 	owner.Close()
+}
+
+func TestTCPTransportPreparedFieldsSerializeWithCancellation(t *testing.T) {
+	client, server := net.Pipe()
+	defer func() { _ = server.Close() }()
+	owner := newTestConnectionOwner(t, 1, 1)
+	sink := &recordingTCPEventSink{}
+	transport, err := newTCPTransportWithConfig(
+		client,
+		owner,
+		TCPTransportConfig{
+			MaxBufferedBytes: 260,
+			RequestDeadline:  time.Second,
+			ResponseDeadline: time.Second,
+			Clock:            &virtualTCPClock{},
+			EventSink:        sink,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer owner.Close()
+
+	const iterations = 1000
+	for range iterations {
+		operation := &tcpTransportOperation{
+			transport: transport,
+			done:      make(chan struct{}),
+		}
+		start := make(chan struct{})
+		var wait sync.WaitGroup
+		wait.Add(2)
+		go func() {
+			defer wait.Done()
+			<-start
+			operation.mutateEventFields(func(fields *tcpEventFields) {
+				fields.RequestedFunction = FunctionReadHoldingRegisters
+				runtime.Gosched()
+				fields.LogicalTable = HoldingRegisters
+				fields.PhysicalOffset = 10
+				fields.PhysicalQuantity = 2
+				fields.RawADUHex = "complete"
+			})
+		}()
+		go func() {
+			defer wait.Done()
+			<-start
+			operation.cancel(
+				transportInternalDeadline,
+				TCPEventRequestTimerFire,
+				context.DeadlineExceeded,
+			)
+		}()
+		close(start)
+		wait.Wait()
+	}
+
+	events := sink.snapshot()
+	if len(events) != iterations {
+		t.Fatalf("timer events = %d, want %d", len(events), iterations)
+	}
+	for _, event := range events {
+		blank := event.RequestedFunction == 0 &&
+			event.LogicalTable == "" &&
+			event.PhysicalOffset == 0 &&
+			event.PhysicalQuantity == 0 &&
+			event.RawADUHex == ""
+		complete := event.RequestedFunction ==
+			FunctionReadHoldingRegisters &&
+			event.LogicalTable == HoldingRegisters &&
+			event.PhysicalOffset == 10 &&
+			event.PhysicalQuantity == 2 &&
+			event.RawADUHex == "complete"
+		if !blank && !complete {
+			t.Fatalf("partially prepared timer event: %#v", event)
+		}
+	}
 }
 
 func TestTCPTransportTimerStopRaceCannotLoseDeadline(t *testing.T) {

@@ -873,7 +873,9 @@ func (transport *TCPTransport) writeReservationUntil(
 		transition, cleanupErr := transport.releasePreWrite(reservation)
 		return transition, combineErrors(err, cleanupErr)
 	}
-	operation.fields.RawADUHex = hex.EncodeToString(adu)
+	operation.mutateEventFields(func(fields *tcpEventFields) {
+		fields.RawADUHex = hex.EncodeToString(adu)
+	})
 	operation.recordOnly(TCPEventWritePrepared)
 	interrupter := newSocketInterrupter(
 		transport.conn,
@@ -980,16 +982,18 @@ func (transport *TCPTransport) writeCoalescedUntil(
 			return prepareErr
 		}
 		physical := group.physical
-		operation.fields.RequestedFunction = physical.Function()
-		operation.fields.LogicalTable = physical.Table()
-		operation.fields.PhysicalOffset = physical.Offset()
-		operation.fields.PhysicalQuantity = physical.Quantity()
 		adu, prepareErr =
 			transport.owner.encodeReservation(reservation)
 		if prepareErr != nil {
 			return prepareErr
 		}
-		operation.fields.RawADUHex = hex.EncodeToString(adu)
+		operation.mutateEventFields(func(fields *tcpEventFields) {
+			fields.RequestedFunction = physical.Function()
+			fields.LogicalTable = physical.Table()
+			fields.PhysicalOffset = physical.Offset()
+			fields.PhysicalQuantity = physical.Quantity()
+			fields.RawADUHex = hex.EncodeToString(adu)
+		})
 		operation.recordOnly(TCPEventWritePrepared)
 		return operation.beginInvocation(func() error {
 			begunReservation, beginErr :=
@@ -1294,6 +1298,14 @@ func (operation *tcpTransportOperation) recordOnly(
 	event := operation.transport.recordEventFields(kind, operation.fields)
 	operation.eventMu.Unlock()
 	return event
+}
+
+func (operation *tcpTransportOperation) mutateEventFields(
+	mutate func(*tcpEventFields),
+) {
+	operation.eventMu.Lock()
+	mutate(&operation.fields)
+	operation.eventMu.Unlock()
 }
 
 func (operation *tcpTransportOperation) setRequestIdentity(

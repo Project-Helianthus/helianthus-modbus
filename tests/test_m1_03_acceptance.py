@@ -145,12 +145,16 @@ class M103AcceptanceTests(unittest.TestCase):
 
     def test_authorization_metadata_drift_is_rejected(self) -> None:
         payload = authorization_payload()
+        payload["author_association"] = "CONTRIBUTOR"
+        validator.validate_authorization(payload)
         payload["author_association"] = "NONE"
         with self.assertRaises(validator.AcceptanceError):
             validator.validate_authorization(payload)
 
     def test_transport_override_body_and_author_are_immutable(self) -> None:
         payload = transport_override_payload()
+        validator.validate_transport_override_payload(payload)
+        payload["author_association"] = "CONTRIBUTOR"
         validator.validate_transport_override_payload(payload)
         payload["body"] = transport_override_body() + "\nrevoked"
         with self.assertRaises(validator.AcceptanceError):

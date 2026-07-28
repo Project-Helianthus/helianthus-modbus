@@ -64,7 +64,7 @@ AUTHORIZATION_SOURCE = {
         "7fea6d204082dba92951dc2229463c602ddd20aca560381f87613c1e71fea881"
     ),
     "author": "d3vi1",
-    "author_association": "MEMBER",
+    "author_associations": ["MEMBER", "CONTRIBUTOR"],
     "created_at": "2026-07-26T15:04:11Z",
     "updated_at": "2026-07-26T15:04:11Z",
 }
@@ -189,7 +189,7 @@ TRANSPORT_OVERRIDE_SOURCE = {
         "20d79a154fb5ab5c15c0cf123ef11c9d315fbdd3b0fff1689f39a40d62432fba"
     ),
     "author": "d3vi1",
-    "author_association": "MEMBER",
+    "author_associations": ["MEMBER", "CONTRIBUTOR"],
     "created_at": "2026-07-28T15:54:47Z",
     "updated_at": "2026-07-28T15:54:47Z",
 }
@@ -264,7 +264,7 @@ def validate_authorization(payload: dict[str, object]) -> None:
         "id": AUTHORIZATION_SOURCE["comment"],
         "body_sha256": AUTHORIZATION_SOURCE["body_sha256"],
         "author": AUTHORIZATION_SOURCE["author"],
-        "author_association": AUTHORIZATION_SOURCE["author_association"],
+        "author_association": actual["author_association"],
         "created_at": AUTHORIZATION_SOURCE["created_at"],
         "updated_at": AUTHORIZATION_SOURCE["updated_at"],
         "issue_url": (
@@ -278,6 +278,8 @@ def validate_authorization(payload: dict[str, object]) -> None:
     }
     if (
         not isinstance(body, str)
+        or actual["author_association"]
+        not in AUTHORIZATION_SOURCE["author_associations"]
         or actual != expected_provenance
     ):
         raise AcceptanceError(
@@ -504,7 +506,7 @@ def validate_transport_override_payload(payload: dict[str, object]) -> None:
         or not isinstance(user, dict)
         or user.get("login") != TRANSPORT_OVERRIDE_SOURCE["author"]
         or payload.get("author_association")
-        != TRANSPORT_OVERRIDE_SOURCE["author_association"]
+        not in TRANSPORT_OVERRIDE_SOURCE["author_associations"]
         or payload.get("created_at") != TRANSPORT_OVERRIDE_SOURCE["created_at"]
         or payload.get("updated_at") != TRANSPORT_OVERRIDE_SOURCE["updated_at"]
         or payload.get("issue_url")

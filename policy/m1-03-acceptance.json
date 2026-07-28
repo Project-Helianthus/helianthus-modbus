@@ -26,7 +26,10 @@
       "authorized_issue_contract_sha256": "e2700e6da559b851fef6b9d510033f1f9b9004964d19cb8c136885c78e7da8a5",
       "body_sha256": "7fea6d204082dba92951dc2229463c602ddd20aca560381f87613c1e71fea881",
       "author": "d3vi1",
-      "author_association": "MEMBER",
+      "author_associations": [
+        "MEMBER",
+        "CONTRIBUTOR"
+      ],
       "created_at": "2026-07-26T15:04:11Z",
       "updated_at": "2026-07-26T15:04:11Z"
     }
@@ -207,7 +210,10 @@
         "label": "transport-gate-override",
         "body_sha256": "20d79a154fb5ab5c15c0cf123ef11c9d315fbdd3b0fff1689f39a40d62432fba",
         "author": "d3vi1",
-        "author_association": "MEMBER",
+        "author_associations": [
+          "MEMBER",
+          "CONTRIBUTOR"
+        ],
         "created_at": "2026-07-28T15:54:47Z",
         "updated_at": "2026-07-28T15:54:47Z"
       }

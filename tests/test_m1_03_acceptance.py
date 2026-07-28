@@ -171,10 +171,16 @@ class M103AcceptanceTests(unittest.TestCase):
                     )
 
     def test_pull_request_missing_reviewed_head_is_rejected(self) -> None:
+        evidence = self.pull_request_evidence()
+
+        def require_reviewed_head(_root: Path, revision: str) -> None:
+            if revision == evidence["head_sha"]:
+                raise validator.AcceptanceError("missing reviewed head")
+
         with mock.patch.object(
             validator.base,
             "ensure_git_object",
-            side_effect=validator.AcceptanceError("missing reviewed head"),
+            side_effect=require_reviewed_head,
         ):
             with self.assertRaisesRegex(
                 validator.AcceptanceError,
@@ -182,7 +188,7 @@ class M103AcceptanceTests(unittest.TestCase):
             ):
                 validator.validate_pull_request(
                     ROOT,
-                    self.pull_request_evidence(),
+                    evidence,
                     "f5e55fccafc060c5556d5510ddb373dc8dbc2bf4",
                     verify_hosted=False,
                     require_published=False,

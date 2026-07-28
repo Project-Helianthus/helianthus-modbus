@@ -973,6 +973,11 @@ func (transport *TCPTransport) writeCoalescedUntil(
 		if prepareErr != nil {
 			return prepareErr
 		}
+		physical := group.physical
+		operation.fields.RequestedFunction = physical.Function()
+		operation.fields.LogicalTable = physical.Table()
+		operation.fields.PhysicalOffset = physical.Offset()
+		operation.fields.PhysicalQuantity = physical.Quantity()
 		adu, prepareErr =
 			transport.owner.encodeReservation(reservation)
 		if prepareErr != nil {

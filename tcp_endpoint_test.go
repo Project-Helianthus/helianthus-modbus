@@ -2943,7 +2943,8 @@ func TestTCPEndpointPreWriteCancellationShrinksReservedPhysicalRead(
 	t *testing.T,
 ) {
 	clock := &virtualTCPClock{}
-	endpoint, err := NewTCPEndpoint(endpointConfigForTest(clock, nil))
+	sink := &recordingTCPEventSink{}
+	endpoint, err := NewTCPEndpoint(endpointConfigForTest(clock, sink))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3045,6 +3046,34 @@ func TestTCPEndpointPreWriteCancellationShrinksReservedPhysicalRead(
 			"cancelled range remains on wire: %v",
 			wireResult.wire[8:12],
 		)
+	}
+	required := map[TCPTransportEventKind]bool{
+		TCPEventWritePrepared:   false,
+		TCPEventWriteInvocation: false,
+		TCPEventWriteReturn:     false,
+		TCPEventTransmitResult:  false,
+	}
+	for _, event := range sink.snapshot() {
+		if _, ok := required[event.Kind]; !ok {
+			continue
+		}
+		required[event.Kind] = true
+		if event.RequestedFunction != FunctionReadHoldingRegisters ||
+			event.LogicalTable != HoldingRegisters ||
+			event.PhysicalOffset != 12 ||
+			event.PhysicalQuantity != 4 ||
+			event.RawADUHex != hex.EncodeToString(wireResult.wire) {
+			t.Fatalf(
+				"shrunken physical operation trace=%#v wire=%x",
+				event,
+				wireResult.wire,
+			)
+		}
+	}
+	for kind, seen := range required {
+		if !seen {
+			t.Fatalf("shrunken operation omitted event %q", kind)
+		}
 	}
 }
 

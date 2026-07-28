@@ -57,7 +57,7 @@ EXPECTED_POLICY = {
             "d30b7154b9762380dc69bb334436abf62cde45273310a829c08ed2fac9b27252"
         ),
         "tcp_transport.go": (
-            "e74e803d5cb2a654a1e44d5e2d8eb018d3641b40fe942e9e319cceeceeb80d84"
+            "baf5df1922b15d26b0bc56812402d04c369e988e0c08ee3496fc541ae4a304a5"
         ),
     },
     "trusted_go_tool_sha256": {

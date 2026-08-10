@@ -29,14 +29,19 @@ only a complete validated aggregate.
 successful TCP logical views. A configured endpoint marks only correlated,
 coherent, still-attached `successful_data` views as eligible. The source binds
 each issued capability to an exact documentary attempt key and a fresh opaque
-attempt instance. Closing freezes ordered membership; claims require that
-exact instance, copied capability views share one one-shot state, and
-`CancelOpen` drains only that instance. Fixture RTU views, synthetic values,
+attempt instance. Callers bind an immutable zero-based dependency ordinal at
+issuance, so closing freezes declared membership independently of concurrent
+registration order. Claims require that exact instance, copied capability
+views share one one-shot state, and `CancelOpen` drains only that instance.
+Fixture RTU views, synthetic values,
 non-success responses, and offline normalization records have no issuance
 authority. Capability and attempt state cannot be serialized or reconstructed.
 
 Normalization is validated before retention and preserves its exact admitted
-encoding, including bounded unknown extensions. Full wire and logical
+encoding, including whitespace, key order, escapes, and bounded unknown
+extensions, through `Bytes` or `AppendJSON`. A successful restart export
+atomically retires the old source before its sequence state can be restored.
+Full wire and logical
 provenance remains separate from capability identity. Live capabilities,
 attempts, claim lifetime, terminal sequences, and non-reconstructing
 tombstones are finite and configured before activation.
@@ -165,13 +170,13 @@ FMV3-M1-02 runtime evidence is machine-checked by
 structural contract identity. The gate executes every mapped test, requires explicit
 run/pass events without skips, and locks every test file owned by M1-02 while
 allowing later milestone test manifests to own their own files.
-FMV3-M1-03 is independently locked by
+FMV3-M1-03 is independently checked by
 [`policy/m1-03-acceptance.json`](policy/m1-03-acceptance.json) and its
 fixture-only [RTU transport matrix](policy/m1-03-transport-matrix.json). That
 gate proves the RED chain, offline-only product boundary, exact
 `FIXTURE_ONLY_NO_HARDWARE` disposition, and every mapped RTU test. It performs
 no gateway, serial-device, or physical-hardware validation.
-FMV3-M1-04 is locked by
+FMV3-M1-04 is checked by
 [`policy/m1-04-acceptance.json`](policy/m1-04-acceptance.json) and its combined
 [transport matrix](policy/m1-04-transport-matrix.json). It proves bounded TCP
 Device Identification traversal plus fixture-only RTU parity and recovery. It

@@ -136,16 +136,16 @@ type runtimeAttemptToken struct {
 type runtimeCapabilityToken struct {
 	source  atomic.Pointer[RuntimeAcquisitionSource]
 	attempt *runtimeAttemptToken
+	ordinal uint32
 	outcome atomic.Uint32
 }
 
 type runtimeAttemptState struct {
-	token             *runtimeAttemptToken
-	key               string
-	phase             runtimeAttemptPhase
-	registered        map[*runtimeCapabilityToken]struct{}
-	registrationOrder []*runtimeCapabilityToken
-	members           []*runtimeCapabilityToken
+	token      *runtimeAttemptToken
+	key        string
+	phase      runtimeAttemptPhase
+	registered map[uint32]*runtimeCapabilityToken
+	members    []*runtimeCapabilityToken
 }
 
 type runtimeCapabilityState struct {
@@ -165,6 +165,7 @@ type RuntimeAcquisitionSource struct {
 	tombstones           []RuntimeCapabilityTombstone
 	nextTerminalSequence uint64
 	sequenceExhausted    bool
+	retired              bool
 	beforeMembership     func()
 }
 
@@ -398,6 +399,9 @@ func (source *RuntimeAcquisitionSource) BeginAttempt(
 	}
 	source.mu.Lock()
 	defer source.mu.Unlock()
+	if source.retired {
+		return nil, ErrRuntimeAcquisitionUnavailable
+	}
 	if len(source.attempts) >= source.config.Limits.MaxAttempts {
 		return nil, ErrRuntimeAcquisitionCapacity
 	}
@@ -407,7 +411,7 @@ func (source *RuntimeAcquisitionSource) BeginAttempt(
 		token:      token,
 		key:        attemptKey,
 		phase:      runtimeAttemptOpen,
-		registered: make(map[*runtimeCapabilityToken]struct{}),
+		registered: make(map[uint32]*runtimeCapabilityToken),
 	}
 	return &RuntimeAttempt{token: token}, nil
 }
@@ -415,6 +419,7 @@ func (source *RuntimeAcquisitionSource) BeginAttempt(
 // Issue emits one capability only from an eligible successful runtime view.
 func (source *RuntimeAcquisitionSource) Issue(
 	attempt *RuntimeAttempt,
+	dependencyOrdinal uint32,
 	view LogicalReadView,
 	normalization RuntimeNormalizationRecord,
 ) (RuntimeAcquisition, error) {
@@ -442,10 +447,20 @@ func (source *RuntimeAcquisitionSource) Issue(
 	}
 	source.mu.Lock()
 	state := source.attempts[attempt.token]
-	if state == nil || state.phase != runtimeAttemptOpen {
+	if source.retired || state == nil || state.phase != runtimeAttemptOpen {
 		source.mu.Unlock()
 		view.runtimeEligibility.state.Store(runtimeViewRejected)
 		return RuntimeAcquisition{}, ErrRuntimeAttemptClosed
+	}
+	if uint64(dependencyOrdinal) >= uint64(source.config.Limits.MaxMembersPerAttempt) {
+		source.mu.Unlock()
+		view.runtimeEligibility.state.Store(runtimeViewRejected)
+		return RuntimeAcquisition{}, ErrRuntimeAttemptMembership
+	}
+	if _, duplicate := state.registered[dependencyOrdinal]; duplicate {
+		source.mu.Unlock()
+		view.runtimeEligibility.state.Store(runtimeViewRejected)
+		return RuntimeAcquisition{}, ErrRuntimeAttemptMembership
 	}
 	if len(state.registered) >= source.config.Limits.MaxMembersPerAttempt ||
 		len(source.live) >= source.config.Limits.MaxLiveCapabilities {
@@ -459,7 +474,10 @@ func (source *RuntimeAcquisitionSource) Issue(
 		view.runtimeEligibility.state.Store(runtimeViewRejected)
 		return RuntimeAcquisition{}, err
 	}
-	token := &runtimeCapabilityToken{attempt: attempt.token}
+	token := &runtimeCapabilityToken{
+		attempt: attempt.token,
+		ordinal: dependencyOrdinal,
+	}
 	token.source.Store(source)
 	source.live[token] = &runtimeCapabilityState{
 		token:            token,
@@ -467,8 +485,7 @@ func (source *RuntimeAcquisitionSource) Issue(
 		terminalSequence: sequence,
 		claimDeadline:    now + source.config.ClaimLifetime,
 	}
-	state.registered[token] = struct{}{}
-	state.registrationOrder = append(state.registrationOrder, token)
+	state.registered[dependencyOrdinal] = token
 	source.mu.Unlock()
 	view.runtimeEligibility.state.Store(runtimeViewIssued)
 	return RuntimeAcquisition{
@@ -592,7 +609,6 @@ func (source *RuntimeAcquisitionSource) exactMembershipLocked(
 	members []RuntimeAcquisition,
 ) bool {
 	if len(members) == 0 || len(members) != len(state.registered) ||
-		len(members) != len(state.registrationOrder) ||
 		len(members) > source.config.Limits.MaxMembersPerAttempt {
 		return false
 	}
@@ -601,16 +617,14 @@ func (source *RuntimeAcquisitionSource) exactMembershipLocked(
 		token := member.capability.token
 		capability := source.live[token]
 		outcome := runtimeOutcomeOf(token)
-		if token == nil || token != state.registrationOrder[index] ||
+		registered := state.registered[uint32(index)]
+		if token == nil || token != registered || token.ordinal != uint32(index) ||
 			(capability == nil && outcome == "") ||
 			(capability != nil && capability.attempt != state.token) ||
 			token.attempt != state.token || member.attemptKey != state.key {
 			return false
 		}
 		if _, duplicate := seen[token]; duplicate {
-			return false
-		}
-		if _, registered := state.registered[token]; !registered {
 			return false
 		}
 		seen[token] = struct{}{}
@@ -621,7 +635,7 @@ func (source *RuntimeAcquisitionSource) exactMembershipLocked(
 func (source *RuntimeAcquisitionSource) cancelAttemptMembersLocked(
 	state *runtimeAttemptState,
 ) {
-	for token := range state.registered {
+	for _, token := range state.registered {
 		if capability := source.live[token]; capability != nil {
 			source.terminalizeLocked(capability, RuntimeCapabilityCancelled)
 		}
@@ -878,6 +892,9 @@ func (source *RuntimeAcquisitionSource) ExportRestartState() (
 	}
 	source.mu.Lock()
 	defer source.mu.Unlock()
+	if source.retired {
+		return RuntimeAcquisitionRestartState{}, ErrRuntimeAcquisitionUnavailable
+	}
 	for token, attempt := range source.attempts {
 		if len(attempt.registered) == 0 {
 			delete(source.attempts, token)
@@ -887,7 +904,7 @@ func (source *RuntimeAcquisitionSource) ExportRestartState() (
 	if len(source.live) != 0 || len(source.attempts) != 0 {
 		return RuntimeAcquisitionRestartState{}, ErrRuntimeAcquisitionUnavailable
 	}
-	return RuntimeAcquisitionRestartState{
+	restart := RuntimeAcquisitionRestartState{
 		SchemaVersion:        1,
 		NextTerminalSequence: source.nextTerminalSequence,
 		SequenceExhausted:    source.sequenceExhausted,
@@ -895,7 +912,9 @@ func (source *RuntimeAcquisitionSource) ExportRestartState() (
 			[]RuntimeCapabilityTombstone(nil),
 			source.tombstones...,
 		),
-	}, nil
+	}
+	source.retired = true
+	return restart, nil
 }
 
 // Valid reports only whether an acquisition wrapper contains an issued token.

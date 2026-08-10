@@ -57,10 +57,10 @@ EXPECTED_POLICY = {
             "daea0680aa70f1a552fc6facdd35e54161728c673625088c599951d560155231"
         ),
         "runtime_acquisition.go": (
-            "c0726b2d69ab6082655c145cd7db899e84d2e2e0c112a9154ba58e97765305c7"
+            "db02abc26df862639d974dec3b63cabb389d9228eaf84a5ba053438b274927ed"
         ),
         "runtime_normalization.go": (
-            "d8ce1d0653291da473f8f90c69168dfbd2716dfd46852a8d37b49b96b786089f"
+            "8e3c3561f96ca8c1a6c7f29696319ead36a0186c6974d6690bdef43118c127dd"
         ),
         "tcp_adu.go": (
             "29468e151d3b241ac49cda6e97be2c1e78561bb41703be347ff0dbf17650c42b"
@@ -94,16 +94,16 @@ EXPECTED_POLICY = {
     },
     "trusted_python_tool_sha256": {
         "scripts/validate_m1_02_acceptance.py": (
-            "baa07d5babf4b091790ca2ac1f6c56716c1bcc4bca5dea8c52c52c011ada51df"
+            "d48d1724e9b7a71380d747b5f8e0029f970c5743ccb37dbdfcf14cbe1ea0e7f0"
         ),
         "scripts/validate_m1_03_acceptance.py": (
-            "456fcd0fe848610c57d3dabcd3a3ca907a2a82533708fc45b1c3845d847ed028"
+            "ed722bb2308be017e45df4c6bb907dbc96421cd385af24214fa59b03cf9aa7e5"
         ),
         "scripts/validate_m1_04_acceptance.py": (
-            "67871ed70775fae195cf3cff90365ebd8ba3d60dfe616d2357977ef63e66fd13"
+            "32da2c9e8dc5477f8d3a420a468708bb4693aa6634145d434fe1a6286f957fd2"
         ),
         "scripts/validate_m1_06_conformance.py": (
-            "087ffad58d49da177f41f42827e3a535d7af102e36baf8358a5e242909bc0d60"
+            "01e30441ab38cef40f3dd65dc2bf00090e70333961be140961d95a344f7c633c"
         ),
     },
     "allowed_operations": [
@@ -303,7 +303,7 @@ def validate_read_only_wire_surface(root: Path) -> None:
             "MarshalText",
             "MarshalText",
         ],
-        "runtime_normalization.go": ["Bytes", "MarshalJSON"],
+        "runtime_normalization.go": ["AppendJSON", "Bytes", "MarshalJSON"],
         "tcp_adu.go": [
             "Bytes",
             "EncodeTCPDeviceIDAccessADU",

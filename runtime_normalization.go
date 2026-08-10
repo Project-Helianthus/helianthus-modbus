@@ -266,15 +266,25 @@ func (record RuntimeNormalizationRecord) Bytes() []byte {
 	return append([]byte(nil), record.encoded...)
 }
 
+// AppendJSON appends the exact admitted encoding without compaction, key
+// reordering, escape rewriting, or HTML escaping.
+func (record RuntimeNormalizationRecord) AppendJSON(destination []byte) (
+	[]byte,
+	error,
+) {
+	if !record.Valid() {
+		return nil, ErrRuntimeNormalization
+	}
+	return append(destination, record.encoded...), nil
+}
+
 // Fields returns the parsed required fields without unknown-field loss.
 func (record RuntimeNormalizationRecord) Fields() RuntimeNormalizationFields {
 	return record.fields
 }
 
-// MarshalJSON reproduces the exact admitted record bytes.
+// MarshalJSON rejects encoding/json because it compacts Marshaler output and
+// may HTML-escape it. Call Bytes or AppendJSON for exact serialization.
 func (record RuntimeNormalizationRecord) MarshalJSON() ([]byte, error) {
-	if !record.Valid() {
-		return nil, ErrRuntimeNormalization
-	}
-	return record.Bytes(), nil
+	return nil, ErrRuntimeNormalization
 }

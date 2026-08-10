@@ -19,13 +19,15 @@
     {
       "id": "runtime_only_lossless_issuance",
       "tests": [
-        "TestM106RuntimeOnlyIssuanceAndLosslessProvenance"
+        "TestM106RuntimeOnlyIssuanceAndLosslessProvenance",
+        "TestM106NonSuccessfulOutcomesNeverIssueCapabilities"
       ]
     },
     {
       "id": "coalesced_independence_copy_shared_claim",
       "tests": [
-        "TestM106CoalescedCapabilitiesAreIndependentAndCopiesShareOneClaim"
+        "TestM106CoalescedCapabilitiesAreIndependentAndCopiesShareOneClaim",
+        "TestM106ConcurrentRegistrationUsesDeclaredOrdinals"
       ]
     },
     {
@@ -44,6 +46,7 @@
       "id": "bounded_sequences_reclamation_restart",
       "tests": [
         "TestM106BoundsExhaustionAndDeterministicTombstones",
+        "TestM106RestartExportRetiresSourceAndPreservesSequenceUniqueness",
         "TestM106FailureAndExpiryReclaimSynchronously"
       ]
     },
@@ -56,7 +59,8 @@
     {
       "id": "bounded_normalization_activation",
       "tests": [
-        "TestM106NormalizationAndActivationBoundsFailClosed"
+        "TestM106NormalizationAndActivationBoundsFailClosed",
+        "TestM106NormalizationExactSerializationBoundary"
       ]
     }
   ],

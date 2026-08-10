@@ -28,8 +28,8 @@
     "rtu_capability.go": "33f8427bccd92b337afe1c8947ed2809f0262db7e3a9697629ef593a6ab2b010",
     "rtu_endpoint.go": "5ec493f52dc4d7058589542fb532232036d235182e5f19530732ecad2b51bb61",
     "rtu_timing.go": "daea0680aa70f1a552fc6facdd35e54161728c673625088c599951d560155231",
-    "runtime_acquisition.go": "c0726b2d69ab6082655c145cd7db899e84d2e2e0c112a9154ba58e97765305c7",
-    "runtime_normalization.go": "d8ce1d0653291da473f8f90c69168dfbd2716dfd46852a8d37b49b96b786089f",
+    "runtime_acquisition.go": "db02abc26df862639d974dec3b63cabb389d9228eaf84a5ba053438b274927ed",
+    "runtime_normalization.go": "8e3c3561f96ca8c1a6c7f29696319ead36a0186c6974d6690bdef43118c127dd",
     "tcp_adu.go": "29468e151d3b241ac49cda6e97be2c1e78561bb41703be347ff0dbf17650c42b",
     "tcp_coalescing.go": "5c6a0d47b2f3d1b1a52528a235ab2c393abdf42c64d4884a1d1db9d101545269",
     "tcp_endpoint.go": "64519fa37a524e036d0cf211c6084015fa9ce9561dad0c94bec2b8e28e300a34",
@@ -43,10 +43,10 @@
     "scripts/read_only_surface/main.go": "d87d51b240cbf80605b7c939acde62f4c5d7bc92fac63bdf0ea67d527f7c3980"
   },
   "trusted_python_tool_sha256": {
-    "scripts/validate_m1_02_acceptance.py": "baa07d5babf4b091790ca2ac1f6c56716c1bcc4bca5dea8c52c52c011ada51df",
-    "scripts/validate_m1_03_acceptance.py": "456fcd0fe848610c57d3dabcd3a3ca907a2a82533708fc45b1c3845d847ed028",
-    "scripts/validate_m1_04_acceptance.py": "67871ed70775fae195cf3cff90365ebd8ba3d60dfe616d2357977ef63e66fd13",
-    "scripts/validate_m1_06_conformance.py": "087ffad58d49da177f41f42827e3a535d7af102e36baf8358a5e242909bc0d60"
+    "scripts/validate_m1_02_acceptance.py": "d48d1724e9b7a71380d747b5f8e0029f970c5743ccb37dbdfcf14cbe1ea0e7f0",
+    "scripts/validate_m1_03_acceptance.py": "ed722bb2308be017e45df4c6bb907dbc96421cd385af24214fa59b03cf9aa7e5",
+    "scripts/validate_m1_04_acceptance.py": "32da2c9e8dc5477f8d3a420a468708bb4693aa6634145d434fe1a6286f957fd2",
+    "scripts/validate_m1_06_conformance.py": "01e30441ab38cef40f3dd65dc2bf00090e70333961be140961d95a344f7c633c"
   },
   "allowed_operations": [
     {

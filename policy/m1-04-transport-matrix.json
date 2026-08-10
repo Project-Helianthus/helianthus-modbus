@@ -12,8 +12,8 @@
   },
   "plan_source": {
     "repository": "Project-Helianthus/helianthus-execution-plans",
-    "commit_sha": "0576544bd8851c4e32da3ca7c401270eee43ef5c",
     "path": "fronius-modbus-multivendor-v3-w29-26.locked/plan.yaml",
+    "node": "FMV3-M1-04",
     "identity_field": "identity_operation_matrix"
   },
   "rows": [

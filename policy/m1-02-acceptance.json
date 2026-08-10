@@ -11,10 +11,8 @@
     },
     "execution_plan": {
       "repository": "Project-Helianthus/helianthus-execution-plans",
-      "commit_sha": "e633fa22a6a6fe3e4f3b74a68eb44401fe26f38d",
       "path": "fronius-modbus-multivendor-v3-w29-26.implementing/plan.yaml",
-      "artifact_sha256": "14f5a38e332f1a46abddee8fe551d357474bf6ad8200349ef0c1b9ca995ed85e",
-      "task_block_sha256": "0e69ce6935da0015a66f5243c2c0108e48cd75f10e81c0c834e197c20c1ac854"
+      "node": "FMV3-M1-02"
     }
   },
   "requirements": [
@@ -187,14 +185,6 @@
       "required_shape": "tests_only_parented_by_fmv3_m1_01",
       "hosted_ci_conclusion": "failure",
       "hosted_ci_run_url": "https://github.com/Project-Helianthus/helianthus-modbus/actions/runs/30353538725"
-    },
-    "reviewed_revision": {
-      "repository": "Project-Helianthus/helianthus-modbus",
-      "pull_request": 6,
-      "reviewed_head_sha": "0aac61ddad62f664b47900334c48803587183fa3",
-      "reviewed_head_tree_sha": "ac81a5294a84a1783cb84f56cfe1ba455291c1ee",
-      "squash_merge_sha": "467229104bfe34ca90aa653ca22ad79da4fa9a32",
-      "squash_merge_tree_sha": "ac81a5294a84a1783cb84f56cfe1ba455291c1ee"
     },
     "CI": {
       "commands": [

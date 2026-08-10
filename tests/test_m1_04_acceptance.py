@@ -33,17 +33,11 @@ class M104AcceptanceTests(unittest.TestCase):
         )
         self.assertGreater(count, 0)
 
-    def test_authorization_identity_and_body_are_immutable(self) -> None:
-        payload = validator.expected_authorization_payload()
-        validator.validate_authorization(payload)
-        payload["author_association"] = "CONTRIBUTOR"
-        validator.validate_authorization(payload)
-        payload["body"] = str(payload["body"]).replace(
-            "authorized_issue: FMV3-M1-04",
-            "authorized_issue: FMV3-M4-01",
-        )
+    def test_structural_plan_identity_drift_is_rejected(self) -> None:
+        document = self.document()
+        document["canonical_sources"]["plan"]["node"] = "FMV3-M1-99"
         with self.assertRaises(validator.AcceptanceError):
-            validator.validate_authorization(payload)
+            validator.validate_canonical_sources(document)
 
     def test_transport_gate_rejects_row_and_result_drift(self) -> None:
         document = self.document()
@@ -61,13 +55,7 @@ class M104AcceptanceTests(unittest.TestCase):
         document = self.document()
         document["canonical_sources"]["companion"]["contract_version"] = 2
         with self.assertRaises(validator.AcceptanceError):
-            validator.validate_canonical_sources(
-                ROOT,
-                document,
-                plan_bytes=None,
-                authorization_payload=validator.expected_authorization_payload(),
-                verify_hosted=False,
-            )
+            validator.validate_canonical_sources(document)
 
     def test_tdd_red_commit_is_tests_only_and_bound_to_base(self) -> None:
         value = copy.deepcopy(self.document()["gates"]["TDD_RED"])

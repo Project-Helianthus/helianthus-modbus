@@ -9,6 +9,7 @@ import (
 	"math"
 	"net"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -174,6 +175,7 @@ func issueRuntimeAcquisitionForTest(
 	t *testing.T,
 	source *RuntimeAcquisitionSource,
 	attempt *RuntimeAttempt,
+	dependencyOrdinal uint32,
 	view LogicalReadView,
 	evidenceID string,
 ) RuntimeAcquisition {
@@ -187,7 +189,7 @@ func issueRuntimeAcquisitionForTest(
 		view.LogicalWordCount(),
 		`,"future_extension":{"z":[3,2,1],"raw":"kept"}`,
 	)
-	acquisition, err := source.Issue(attempt, view, record)
+	acquisition, err := source.Issue(attempt, dependencyOrdinal, view, record)
 	if err != nil {
 		t.Fatalf("Issue: %v", err)
 	}
@@ -217,7 +219,7 @@ func TestM106RuntimeOnlyIssuanceAndLosslessProvenance(t *testing.T) {
 		2,
 		`,"unknown":{"preserve":[1,2,3]}`,
 	)
-	acquisition, err := source.Issue(attempt, view, normalization)
+	acquisition, err := source.Issue(attempt, 0, view, normalization)
 	if err != nil {
 		t.Fatalf("Issue: %v", err)
 	}
@@ -244,9 +246,9 @@ func TestM106RuntimeOnlyIssuanceAndLosslessProvenance(t *testing.T) {
 	if acquisition.Provenance().Words[0] != 0x0102 {
 		t.Fatal("caller mutated retained provenance")
 	}
-	encoded, err := json.Marshal(acquisition.Normalization())
+	encoded, err := acquisition.Normalization().AppendJSON(nil)
 	if err != nil {
-		t.Fatalf("Marshal normalization: %v", err)
+		t.Fatalf("AppendJSON normalization: %v", err)
 	}
 	if !bytes.Equal(encoded, normalization.Bytes()) {
 		t.Fatalf("normalization round trip changed:\n got %s\nwant %s", encoded, normalization.Bytes())
@@ -280,7 +282,7 @@ func TestM106RuntimeOnlyIssuanceAndLosslessProvenance(t *testing.T) {
 		1,
 		"",
 	)
-	if issued, err := source.Issue(fixtureAttempt, fixtureView, fixtureRecord); !errors.Is(err, ErrRuntimeAcquisitionUnavailable) || issued.Valid() {
+	if issued, err := source.Issue(fixtureAttempt, 0, fixtureView, fixtureRecord); !errors.Is(err, ErrRuntimeAcquisitionUnavailable) || issued.Valid() {
 		t.Fatalf("fixture issued=%#v err=%v", issued, err)
 	}
 	if _, err := fixtureAttempt.Close(nil); !errors.Is(err, ErrRuntimeAttemptMembership) {
@@ -300,7 +302,7 @@ func TestM106RuntimeOnlyIssuanceAndLosslessProvenance(t *testing.T) {
 		1,
 		"",
 	)
-	if issued, err := source.Issue(missingAttempt, LogicalReadView{}, runtimeRecord); !errors.Is(err, ErrRuntimeAcquisitionUnavailable) || issued.Valid() {
+	if issued, err := source.Issue(missingAttempt, 0, LogicalReadView{}, runtimeRecord); !errors.Is(err, ErrRuntimeAcquisitionUnavailable) || issued.Valid() {
 		t.Fatalf("synthetic issued=%#v err=%v", issued, err)
 	}
 	if _, err := missingAttempt.Close(nil); !errors.Is(err, ErrRuntimeAttemptMembership) {
@@ -338,11 +340,187 @@ func TestM106RuntimeOnlyIssuanceAndLosslessProvenance(t *testing.T) {
 		rtuView.LogicalWordCount(),
 		"",
 	)
-	if issued, err := source.Issue(rtuAttempt, rtuView, rtuRecord); !errors.Is(err, ErrRuntimeAcquisitionUnavailable) || issued.Valid() {
+	if issued, err := source.Issue(rtuAttempt, 0, rtuView, rtuRecord); !errors.Is(err, ErrRuntimeAcquisitionUnavailable) || issued.Valid() {
 		t.Fatalf("RTU fixture issued=%#v err=%v", issued, err)
 	}
 	if _, err := rtuAttempt.Close(nil); !errors.Is(err, ErrRuntimeAttemptMembership) {
 		t.Fatalf("RTU fixture close err=%v", err)
+	}
+}
+
+func TestM106NonSuccessfulOutcomesNeverIssueCapabilities(t *testing.T) {
+	newGroup := func(
+		t *testing.T,
+		source *RuntimeAcquisitionSource,
+		logicalViewID uint64,
+	) *CoalescedRead {
+		t.Helper()
+		group, err := CoalesceReads(
+			[]ReadIntent{testReadIntent(t, logicalViewID, 10, 2)},
+			1,
+		)
+		if err != nil {
+			t.Fatalf("CoalesceReads: %v", err)
+		}
+		group.setRuntimeAcquisitionSource(source)
+		return group
+	}
+	assertNoCapability := func(t *testing.T, source *RuntimeAcquisitionSource) {
+		t.Helper()
+		snapshot := source.Snapshot()
+		if snapshot.LiveCapabilities != 0 || snapshot.ActiveAttempts != 0 ||
+			len(snapshot.Tombstones) != 0 {
+			t.Fatalf("non-success retained capability state: %#v", snapshot)
+		}
+	}
+
+	for _, test := range []struct {
+		name    string
+		outcome WireOutcome
+		pdu     []byte
+	}{
+		{
+			name:    "protocol_exception",
+			outcome: WireProtocolException,
+			pdu:     []byte{0x83, 0x02},
+		},
+		{
+			name:    "malformed_response",
+			outcome: WireMalformedResponse,
+			pdu:     []byte{3, 4, 0, 1},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			clock := &virtualTCPClock{}
+			source := newRuntimeAcquisitionSourceForTest(t, clock)
+			group := newGroup(t, source, 111)
+			owner, reservation := bindCoalescedGroup(t, group)
+			if _, err := owner.RecordTransmit(reservation, TransmitComplete); err != nil {
+				t.Fatalf("RecordTransmit: %v", err)
+			}
+			response, _ := owner.Correlate(
+				reservation.Generation(),
+				testTCPFrame(
+					t,
+					reservation.TransactionID(),
+					group.unitID,
+					test.pdu,
+				),
+			)
+			if response.Outcome() != test.outcome || response.Deliverable() {
+				t.Fatalf("response=%#v", response)
+			}
+			if err := group.Fail(response); err != nil {
+				t.Fatalf("Fail: %v", err)
+			}
+			assertNoCapability(t, source)
+		})
+	}
+
+	t.Run("cancelled_dependent", func(t *testing.T) {
+		clock := &virtualTCPClock{}
+		source := newRuntimeAcquisitionSourceForTest(t, clock)
+		group := newGroup(t, source, 112)
+		if _, err := group.Cancel(112); err != nil {
+			t.Fatalf("Cancel: %v", err)
+		}
+		assertNoCapability(t, source)
+	})
+
+	t.Run("transport_failure", func(t *testing.T) {
+		clock := &virtualTCPClock{}
+		source := newRuntimeAcquisitionSourceForTest(t, clock)
+		group := newGroup(t, source, 113)
+		if err := group.FailTransport(); err != nil {
+			t.Fatalf("FailTransport: %v", err)
+		}
+		assertNoCapability(t, source)
+	})
+
+	for _, test := range []struct {
+		name    string
+		outcome WireOutcome
+		prepare func(
+			t *testing.T,
+			owner *TCPConnectionOwner,
+			reservation TCPReservation,
+			group *CoalescedRead,
+		) WireResponse
+	}{
+		{
+			name:    "late_response",
+			outcome: WireLateAfterAbandonment,
+			prepare: func(
+				t *testing.T,
+				owner *TCPConnectionOwner,
+				reservation TCPReservation,
+				group *CoalescedRead,
+			) WireResponse {
+				t.Helper()
+				if err := owner.AbandonResponseWait(reservation, AbandonTimeout); err != nil {
+					t.Fatalf("AbandonResponseWait: %v", err)
+				}
+				response, err := owner.Correlate(
+					reservation.Generation(),
+					testTCPFrame(
+						t,
+						reservation.TransactionID(),
+						group.unitID,
+						[]byte{3, 4, 0, 1, 0, 2},
+					),
+				)
+				if err != nil {
+					t.Fatalf("Correlate(late): %v", err)
+				}
+				return response
+			},
+		},
+		{
+			name:    "uncorrelated_response",
+			outcome: WireDroppedUncorrelated,
+			prepare: func(
+				t *testing.T,
+				owner *TCPConnectionOwner,
+				reservation TCPReservation,
+				group *CoalescedRead,
+			) WireResponse {
+				t.Helper()
+				response, err := owner.Correlate(
+					reservation.Generation(),
+					testTCPFrame(
+						t,
+						reservation.TransactionID(),
+						group.unitID+1,
+						[]byte{3, 4, 0, 1, 0, 2},
+					),
+				)
+				if err != nil {
+					t.Fatalf("Correlate(uncorrelated): %v", err)
+				}
+				return response
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			clock := &virtualTCPClock{}
+			source := newRuntimeAcquisitionSourceForTest(t, clock)
+			group := newGroup(t, source, 114)
+			owner, reservation := bindCoalescedGroup(t, group)
+			if _, err := owner.RecordTransmit(reservation, TransmitComplete); err != nil {
+				t.Fatalf("RecordTransmit: %v", err)
+			}
+			response := test.prepare(t, owner, reservation, group)
+			if response.Outcome() != test.outcome || response.Deliverable() {
+				t.Fatalf("response=%#v", response)
+			}
+			if views, err := group.ReplaySuccessfulResponse(response); err == nil || len(views) != 0 {
+				t.Fatalf("ReplaySuccessfulResponse views=%#v err=%v", views, err)
+			}
+			if err := group.FailTransport(); err != nil {
+				t.Fatalf("FailTransport cleanup: %v", err)
+			}
+			assertNoCapability(t, source)
+		})
 	}
 }
 
@@ -363,8 +541,8 @@ func TestM106CoalescedCapabilitiesAreIndependentAndCopiesShareOneClaim(t *testin
 	if err != nil {
 		t.Fatalf("BeginAttempt: %v", err)
 	}
-	first := issueRuntimeAcquisitionForTest(t, source, attempt, views[0], "coalesced-a")
-	second := issueRuntimeAcquisitionForTest(t, source, attempt, views[1], "coalesced-b")
+	first := issueRuntimeAcquisitionForTest(t, source, attempt, 0, views[0], "coalesced-a")
+	second := issueRuntimeAcquisitionForTest(t, source, attempt, 1, views[1], "coalesced-b")
 	instance, err := attempt.Close([]RuntimeAcquisition{first, second})
 	if err != nil {
 		t.Fatalf("Close: %v", err)
@@ -411,6 +589,128 @@ func TestM106CoalescedCapabilitiesAreIndependentAndCopiesShareOneClaim(t *testin
 	}
 }
 
+func TestM106ConcurrentRegistrationUsesDeclaredOrdinals(t *testing.T) {
+	clock := &virtualTCPClock{}
+	source := newRuntimeAcquisitionSourceForTest(t, clock)
+	views := runtimeSuccessfulViewsForTest(
+		t,
+		source,
+		clock,
+		[]runtimeReadForTest{
+			{logicalViewID: 211, offset: 32, quantity: 1},
+			{logicalViewID: 212, offset: 32, quantity: 1},
+		},
+		[]uint16{0x2111},
+	)
+	attempt, err := source.BeginAttempt("attempt-explicit-order")
+	if err != nil {
+		t.Fatalf("BeginAttempt: %v", err)
+	}
+	records := []RuntimeNormalizationRecord{
+		runtimeNormalizationForTest(t, source, RuntimeAcquisitionSourceRuntime, "ordinal-a", 32, 1, ""),
+		runtimeNormalizationForTest(t, source, RuntimeAcquisitionSourceRuntime, "ordinal-b", 32, 1, ""),
+	}
+
+	firstPaused := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	var hookCalls atomic.Int32
+	source.beforeMembership = func() {
+		if hookCalls.Add(1) == 1 {
+			close(firstPaused)
+			<-releaseFirst
+		}
+	}
+	type issueResult struct {
+		acquisition RuntimeAcquisition
+		err         error
+	}
+	firstResult := make(chan issueResult, 1)
+	secondResult := make(chan issueResult, 1)
+	go func() {
+		acquisition, issueErr := source.Issue(attempt, 0, views[0], records[0])
+		firstResult <- issueResult{acquisition: acquisition, err: issueErr}
+	}()
+	<-firstPaused
+	go func() {
+		acquisition, issueErr := source.Issue(attempt, 1, views[1], records[1])
+		secondResult <- issueResult{acquisition: acquisition, err: issueErr}
+	}()
+	second := <-secondResult
+	if second.err != nil {
+		t.Fatalf("Issue(ordinal 1): %v", second.err)
+	}
+	close(releaseFirst)
+	first := <-firstResult
+	source.beforeMembership = nil
+	if first.err != nil {
+		t.Fatalf("Issue(ordinal 0): %v", first.err)
+	}
+	instance, err := attempt.Close([]RuntimeAcquisition{
+		first.acquisition,
+		second.acquisition,
+	})
+	if err != nil {
+		t.Fatalf("Close declared [A,B] after reverse registration: %v", err)
+	}
+	for _, acquisition := range []RuntimeAcquisition{
+		first.acquisition,
+		second.acquisition,
+	} {
+		result, claimErr := acquisition.Capability().Claim(instance)
+		if claimErr != nil || !result.Won {
+			t.Fatalf("claim=%#v err=%v", result, claimErr)
+		}
+	}
+
+	for _, test := range []struct {
+		name    string
+		members func(RuntimeAcquisition, RuntimeAcquisition) []RuntimeAcquisition
+	}{
+		{
+			name: "duplicate",
+			members: func(first, _ RuntimeAcquisition) []RuntimeAcquisition {
+				return []RuntimeAcquisition{first, first}
+			},
+		},
+		{
+			name: "omission",
+			members: func(first, _ RuntimeAcquisition) []RuntimeAcquisition {
+				return []RuntimeAcquisition{first}
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			localClock := &virtualTCPClock{}
+			localSource := newRuntimeAcquisitionSourceForTest(t, localClock)
+			localViews := runtimeSuccessfulViewsForTest(
+				t,
+				localSource,
+				localClock,
+				[]runtimeReadForTest{
+					{logicalViewID: 213, offset: 34, quantity: 1},
+					{logicalViewID: 214, offset: 34, quantity: 1},
+				},
+				[]uint16{0x2133},
+			)
+			localAttempt, beginErr := localSource.BeginAttempt("invalid-membership")
+			if beginErr != nil {
+				t.Fatalf("BeginAttempt: %v", beginErr)
+			}
+			firstMember := issueRuntimeAcquisitionForTest(
+				t, localSource, localAttempt, 0, localViews[0], "member-a",
+			)
+			secondMember := issueRuntimeAcquisitionForTest(
+				t, localSource, localAttempt, 1, localViews[1], "member-b",
+			)
+			if _, closeErr := localAttempt.Close(
+				test.members(firstMember, secondMember),
+			); !errors.Is(closeErr, ErrRuntimeAttemptMembership) {
+				t.Fatalf("Close err=%v", closeErr)
+			}
+		})
+	}
+}
+
 func TestM106MembershipCloseRejectsLateRegistration(t *testing.T) {
 	clock := &virtualTCPClock{}
 	source := newRuntimeAcquisitionSourceForTest(t, clock)
@@ -443,7 +743,7 @@ func TestM106MembershipCloseRejectsLateRegistration(t *testing.T) {
 	issued := make(chan RuntimeAcquisition, 1)
 	issueErr := make(chan error, 1)
 	go func() {
-		acquisition, err := source.Issue(attempt, view, record)
+		acquisition, err := source.Issue(attempt, 0, view, record)
 		issued <- acquisition
 		issueErr <- err
 	}()
@@ -482,6 +782,7 @@ func TestM106MembershipCloseRejectsLateRegistration(t *testing.T) {
 		t,
 		source,
 		orderedAttempt,
+		0,
 		orderedViews[0],
 		"ordered-first",
 	)
@@ -489,6 +790,7 @@ func TestM106MembershipCloseRejectsLateRegistration(t *testing.T) {
 		t,
 		source,
 		orderedAttempt,
+		1,
 		orderedViews[1],
 		"ordered-second",
 	)
@@ -530,8 +832,8 @@ func TestM106CancelOpenUsesExactInstanceAndDrainsMembers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BeginAttempt(first): %v", err)
 	}
-	first := issueRuntimeAcquisitionForTest(t, source, firstAttempt, firstViews[0], "same-key-a")
-	firstOpen := issueRuntimeAcquisitionForTest(t, source, firstAttempt, firstViews[1], "same-key-open")
+	first := issueRuntimeAcquisitionForTest(t, source, firstAttempt, 0, firstViews[0], "same-key-a")
+	firstOpen := issueRuntimeAcquisitionForTest(t, source, firstAttempt, 1, firstViews[1], "same-key-open")
 	firstInstance, err := firstAttempt.Close([]RuntimeAcquisition{first, firstOpen})
 	if err != nil {
 		t.Fatalf("Close(first): %v", err)
@@ -544,7 +846,7 @@ func TestM106CancelOpenUsesExactInstanceAndDrainsMembers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BeginAttempt(second): %v", err)
 	}
-	second := issueRuntimeAcquisitionForTest(t, source, secondAttempt, secondView, "same-key-b")
+	second := issueRuntimeAcquisitionForTest(t, source, secondAttempt, 0, secondView, "same-key-b")
 	secondInstance, err := secondAttempt.Close([]RuntimeAcquisition{second})
 	if err != nil {
 		t.Fatalf("Close(second): %v", err)
@@ -596,8 +898,8 @@ func TestM106BoundsExhaustionAndDeterministicTombstones(t *testing.T) {
 	firstAttempt, _ := source.BeginAttempt("bounded-a")
 	secondAttempt, _ := source.BeginAttempt("bounded-b")
 	thirdAttempt, _ := source.BeginAttempt("bounded-c")
-	first := issueRuntimeAcquisitionForTest(t, source, firstAttempt, views[0], "bounded-a")
-	second := issueRuntimeAcquisitionForTest(t, source, secondAttempt, views[1], "bounded-b")
+	first := issueRuntimeAcquisitionForTest(t, source, firstAttempt, 0, views[0], "bounded-a")
+	second := issueRuntimeAcquisitionForTest(t, source, secondAttempt, 0, views[1], "bounded-b")
 	thirdRecord := runtimeNormalizationForTest(
 		t,
 		source,
@@ -607,7 +909,7 @@ func TestM106BoundsExhaustionAndDeterministicTombstones(t *testing.T) {
 		1,
 		"",
 	)
-	if third, err := source.Issue(thirdAttempt, views[2], thirdRecord); !errors.Is(err, ErrRuntimeAcquisitionCapacity) || third.Valid() {
+	if third, err := source.Issue(thirdAttempt, 0, views[2], thirdRecord); !errors.Is(err, ErrRuntimeAcquisitionCapacity) || third.Valid() {
 		t.Fatalf("over-capacity issue=%#v err=%v", third, err)
 	}
 	firstInstance, err := firstAttempt.Close([]RuntimeAcquisition{first})
@@ -632,7 +934,7 @@ func TestM106BoundsExhaustionAndDeterministicTombstones(t *testing.T) {
 		[]uint16{0x5004},
 	)[0]
 	fourthAttempt, _ := source.BeginAttempt("bounded-d")
-	fourth := issueRuntimeAcquisitionForTest(t, source, fourthAttempt, fourthView, "bounded-d")
+	fourth := issueRuntimeAcquisitionForTest(t, source, fourthAttempt, 0, fourthView, "bounded-d")
 	fourthInstance, err := fourthAttempt.Close([]RuntimeAcquisition{fourth})
 	if err != nil {
 		t.Fatalf("Close(fourth): %v", err)
@@ -682,7 +984,7 @@ func TestM106BoundsExhaustionAndDeterministicTombstones(t *testing.T) {
 		[]uint16{0x5005},
 	)
 	lastAttempt, _ := exhausted.BeginAttempt("last-sequence")
-	last := issueRuntimeAcquisitionForTest(t, exhausted, lastAttempt, exhaustedViews[0], "last")
+	last := issueRuntimeAcquisitionForTest(t, exhausted, lastAttempt, 0, exhaustedViews[0], "last")
 	blockedAttempt, _ := exhausted.BeginAttempt("exhausted")
 	blockedRecord := runtimeNormalizationForTest(
 		t,
@@ -693,7 +995,7 @@ func TestM106BoundsExhaustionAndDeterministicTombstones(t *testing.T) {
 		1,
 		"",
 	)
-	if blocked, err := exhausted.Issue(blockedAttempt, exhaustedViews[1], blockedRecord); !errors.Is(err, ErrRuntimeTerminalSequenceExhausted) || blocked.Valid() {
+	if blocked, err := exhausted.Issue(blockedAttempt, 0, exhaustedViews[1], blockedRecord); !errors.Is(err, ErrRuntimeTerminalSequenceExhausted) || blocked.Valid() {
 		t.Fatalf("exhausted issue=%#v err=%v", blocked, err)
 	}
 	if _, err := blockedAttempt.Close(nil); !errors.Is(err, ErrRuntimeAttemptMembership) {
@@ -715,6 +1017,120 @@ func TestM106BoundsExhaustionAndDeterministicTombstones(t *testing.T) {
 	}
 }
 
+func TestM106RestartExportRetiresSourceAndPreservesSequenceUniqueness(t *testing.T) {
+	clock := &virtualTCPClock{}
+	config := runtimeAcquisitionConfigForTest(clock)
+	source, err := NewRuntimeAcquisitionSource(config)
+	if err != nil {
+		t.Fatalf("NewRuntimeAcquisitionSource: %v", err)
+	}
+	views := runtimeSuccessfulViewsForTest(
+		t,
+		source,
+		clock,
+		[]runtimeReadForTest{
+			{logicalViewID: 511, offset: 66, quantity: 1},
+			{logicalViewID: 512, offset: 66, quantity: 1},
+		},
+		[]uint16{0x5111},
+	)
+	firstAttempt, err := source.BeginAttempt("before-export")
+	if err != nil {
+		t.Fatalf("BeginAttempt(first): %v", err)
+	}
+	first := issueRuntimeAcquisitionForTest(
+		t, source, firstAttempt, 0, views[0], "before-export",
+	)
+	firstInstance, err := firstAttempt.Close([]RuntimeAcquisition{first})
+	if err != nil {
+		t.Fatalf("Close(first): %v", err)
+	}
+	if result, claimErr := first.Capability().Claim(firstInstance); claimErr != nil || !result.Won {
+		t.Fatalf("Claim(first)=%#v err=%v", result, claimErr)
+	}
+
+	staleAttempt, err := source.BeginAttempt("stale-after-export")
+	if err != nil {
+		t.Fatalf("BeginAttempt(stale): %v", err)
+	}
+	staleRecord := runtimeNormalizationForTest(
+		t,
+		source,
+		RuntimeAcquisitionSourceRuntime,
+		"stale-view",
+		views[1].LogicalOffset(),
+		views[1].LogicalWordCount(),
+		"",
+	)
+	restart, err := source.ExportRestartState()
+	if err != nil {
+		t.Fatalf("ExportRestartState: %v", err)
+	}
+	if _, err := source.ExportRestartState(); !errors.Is(err, ErrRuntimeAcquisitionUnavailable) {
+		t.Fatalf("second export err=%v", err)
+	}
+	if attempt, err := source.BeginAttempt("retired-source"); !errors.Is(err, ErrRuntimeAcquisitionUnavailable) || attempt != nil {
+		t.Fatalf("retired BeginAttempt=%#v err=%v", attempt, err)
+	}
+	if acquisition, err := source.Issue(staleAttempt, 0, views[1], staleRecord); !errors.Is(err, ErrRuntimeAcquisitionUnavailable) || acquisition.Valid() {
+		t.Fatalf("retired stale Issue=%#v err=%v", acquisition, err)
+	}
+
+	restoredConfig := config
+	restoredConfig.Restart = &restart
+	restored, err := NewRuntimeAcquisitionSource(restoredConfig)
+	if err != nil {
+		t.Fatalf("restore source: %v", err)
+	}
+	if attempt, err := source.BeginAttempt("old-source-after-restore"); !errors.Is(err, ErrRuntimeAcquisitionUnavailable) || attempt != nil {
+		t.Fatalf("old source BeginAttempt after restore=%#v err=%v", attempt, err)
+	}
+	restoredAttempt, err := restored.BeginAttempt("after-restore")
+	if err != nil {
+		t.Fatalf("BeginAttempt(restored): %v", err)
+	}
+	restoredStaleRecord := runtimeNormalizationForTest(
+		t,
+		restored,
+		RuntimeAcquisitionSourceRuntime,
+		"stale-view-restored-source",
+		views[1].LogicalOffset(),
+		views[1].LogicalWordCount(),
+		"",
+	)
+	if acquisition, err := restored.Issue(
+		restoredAttempt,
+		0,
+		views[1],
+		restoredStaleRecord,
+	); !errors.Is(err, ErrRuntimeAcquisitionUnavailable) || acquisition.Valid() {
+		t.Fatalf("restored stale-view Issue=%#v err=%v", acquisition, err)
+	}
+	freshView := runtimeSuccessfulViewsForTest(
+		t,
+		restored,
+		clock,
+		[]runtimeReadForTest{{logicalViewID: 513, offset: 68, quantity: 1}},
+		[]uint16{0x5133},
+	)[0]
+	second := issueRuntimeAcquisitionForTest(
+		t, restored, restoredAttempt, 0, freshView, "after-restore",
+	)
+	secondInstance, err := restoredAttempt.Close([]RuntimeAcquisition{second})
+	if err != nil {
+		t.Fatalf("Close(second): %v", err)
+	}
+	if result, claimErr := second.Capability().Claim(secondInstance); claimErr != nil || !result.Won {
+		t.Fatalf("Claim(second)=%#v err=%v", result, claimErr)
+	}
+	tombstones := restored.Snapshot().Tombstones
+	if len(tombstones) != 2 ||
+		tombstones[0].TerminalSequence != 1 ||
+		tombstones[1].TerminalSequence != 2 {
+		t.Fatalf("restored tombstones=%#v", tombstones)
+	}
+}
+
 func TestM106FailureAndExpiryReclaimSynchronously(t *testing.T) {
 	clock := &virtualTCPClock{}
 	source := newRuntimeAcquisitionSourceForTest(t, clock)
@@ -732,8 +1148,8 @@ func TestM106FailureAndExpiryReclaimSynchronously(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BeginAttempt: %v", err)
 	}
-	failed := issueRuntimeAcquisitionForTest(t, source, attempt, views[0], "failed")
-	expired := issueRuntimeAcquisitionForTest(t, source, attempt, views[1], "expired")
+	failed := issueRuntimeAcquisitionForTest(t, source, attempt, 0, views[0], "failed")
+	expired := issueRuntimeAcquisitionForTest(t, source, attempt, 1, views[1], "expired")
 	instance, err := attempt.Close([]RuntimeAcquisition{failed, expired})
 	if err != nil {
 		t.Fatalf("Close: %v", err)
@@ -776,7 +1192,7 @@ func TestM106PrivateCapabilityStateIsNotSerializableOrReconstructable(t *testing
 	if err != nil {
 		t.Fatalf("BeginAttempt: %v", err)
 	}
-	acquisition := issueRuntimeAcquisitionForTest(t, source, attempt, view, "opaque")
+	acquisition := issueRuntimeAcquisitionForTest(t, source, attempt, 0, view, "opaque")
 	instance, err := attempt.Close([]RuntimeAcquisition{acquisition})
 	if err != nil {
 		t.Fatalf("Close: %v", err)
@@ -823,6 +1239,43 @@ func TestM106PrivateCapabilityStateIsNotSerializableOrReconstructable(t *testing
 	}
 	if err := source.CancelOpen(instance); err != nil {
 		t.Fatalf("CancelOpen: %v", err)
+	}
+}
+
+func TestM106NormalizationExactSerializationBoundary(t *testing.T) {
+	clock := &virtualTCPClock{}
+	source := newRuntimeAcquisitionSourceForTest(t, clock)
+	encoded := []byte("{\n" +
+		"  \"future_html\" : \"<script>&\\u003c/script>\",\n" +
+		"  \"word_count\" : 1,\n" +
+		"  \"logical_table\" : \"holding_registers\",\n" +
+		"  \"function_code\" : 3,\n" +
+		"  \"documentary_address_base\" : \"holding_reference_4xxxx\",\n" +
+		"  \"documentary_address\" : 40071,\n" +
+		"  \"documentary_notation\" : \"4\\u0078xxx\",\n" +
+		"  \"source_evidence_id\" : \"evidence\\/escaped\",\n" +
+		"  \"source_kind\" : \"\\u0072untime\",\n" +
+		"  \"normalized_zero_based_pdu_offset\" : 70,\n" +
+		"  \"schema_version\" : 1\n" +
+		"}\n")
+	record, err := source.ParseNormalizationRecord(encoded)
+	if err != nil {
+		t.Fatalf("ParseNormalizationRecord: %v", err)
+	}
+	prefix := []byte("prefix:")
+	serialized, err := record.AppendJSON(append([]byte(nil), prefix...))
+	if err != nil {
+		t.Fatalf("AppendJSON: %v", err)
+	}
+	want := append(append([]byte(nil), prefix...), encoded...)
+	if !bytes.Equal(serialized, want) {
+		t.Fatalf("exact serialization changed:\n got %q\nwant %q", serialized, want)
+	}
+	if !bytes.Equal(record.Bytes(), encoded) {
+		t.Fatalf("Bytes changed:\n got %q\nwant %q", record.Bytes(), encoded)
+	}
+	if marshaled, err := json.Marshal(record); !errors.Is(err, ErrRuntimeNormalization) || marshaled != nil {
+		t.Fatalf("json.Marshal=%q err=%v", marshaled, err)
 	}
 }
 

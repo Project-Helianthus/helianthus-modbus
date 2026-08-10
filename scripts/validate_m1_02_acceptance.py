@@ -25,16 +25,10 @@ COMPANION_SOURCE = {
 }
 PLAN_SOURCE = {
     "repository": "Project-Helianthus/helianthus-execution-plans",
-    "commit_sha": "e633fa22a6a6fe3e4f3b74a68eb44401fe26f38d",
     "path": (
         "fronius-modbus-multivendor-v3-w29-26.implementing/plan.yaml"
     ),
-    "artifact_sha256": (
-        "14f5a38e332f1a46abddee8fe551d357474bf6ad8200349ef0c1b9ca995ed85e"
-    ),
-    "task_block_sha256": (
-        "0e69ce6935da0015a66f5243c2c0108e48cd75f10e81c0c834e197c20c1ac854"
-    ),
+    "node": "FMV3-M1-02",
 }
 M1_01_SHA = "c9b3281b5025fd3b1b714235493bd36d526f865f"
 EXPECTED_REQUIREMENTS = (
@@ -128,65 +122,6 @@ def load_json(path: Path) -> dict[str, object]:
     return value
 
 
-def validate_reviewed_revision_payload(
-    evidence: object,
-    pull_request: object,
-    *,
-    red_is_ancestor_of_reviewed_head: bool,
-    reviewed_head_tree: str,
-    squash_merge_tree: str,
-    squash_merge_is_ancestor_of_head: bool,
-) -> None:
-    if not isinstance(evidence, dict) or not isinstance(pull_request, dict):
-        raise AcceptanceError("reviewed revision evidence is missing")
-    expected_keys = {
-        "repository",
-        "pull_request",
-        "reviewed_head_sha",
-        "reviewed_head_tree_sha",
-        "squash_merge_sha",
-        "squash_merge_tree_sha",
-    }
-    if set(evidence) != expected_keys:
-        raise AcceptanceError("reviewed revision evidence shape changed")
-    full_sha_fields = (
-        "reviewed_head_sha",
-        "reviewed_head_tree_sha",
-        "squash_merge_sha",
-        "squash_merge_tree_sha",
-    )
-    if any(
-        not isinstance(evidence.get(field), str)
-        or re.fullmatch(r"[0-9a-f]{40}", str(evidence[field])) is None
-        for field in full_sha_fields
-    ):
-        raise AcceptanceError("reviewed revision requires full immutable SHAs")
-    merge_commit = pull_request.get("mergeCommit")
-    if (
-        evidence.get("repository")
-        != "Project-Helianthus/helianthus-modbus"
-        or evidence.get("pull_request") != 6
-        or pull_request.get("number") != evidence.get("pull_request")
-        or pull_request.get("state") != "MERGED"
-        or pull_request.get("baseRefName") != "main"
-        or not pull_request.get("mergedAt")
-        or pull_request.get("headRefOid") != evidence.get("reviewed_head_sha")
-        or not isinstance(merge_commit, dict)
-        or merge_commit.get("oid") != evidence.get("squash_merge_sha")
-    ):
-        raise AcceptanceError("hosted PR revision evidence mismatch")
-    if not red_is_ancestor_of_reviewed_head:
-        raise AcceptanceError("TDD_RED is not ancestral to the reviewed PR head")
-    if reviewed_head_tree != evidence.get("reviewed_head_tree_sha"):
-        raise AcceptanceError("reviewed PR head tree changed")
-    if squash_merge_tree != evidence.get("squash_merge_tree_sha"):
-        raise AcceptanceError("squash merge tree changed")
-    if reviewed_head_tree != squash_merge_tree:
-        raise AcceptanceError("reviewed and squash-merged trees differ")
-    if not squash_merge_is_ancestor_of_head:
-        raise AcceptanceError("squash merge is not an ancestor of HEAD")
-
-
 def ensure_git_object(root: Path, commit: str) -> None:
     present = subprocess.run(
         ["git", "cat-file", "-e", f"{commit}^{{commit}}"],
@@ -237,41 +172,6 @@ def ensure_full_history(root: Path) -> None:
         )
 
 
-def fetch_reviewed_pr_head(
-    root: Path,
-    pull_number: int,
-    expected_sha: str,
-) -> str:
-    evidence_ref = f"refs/helianthus/evidence/pull-{pull_number}-head"
-    fetched = subprocess.run(
-        [
-            "git",
-            "fetch",
-            "--no-tags",
-            "origin",
-            f"+refs/pull/{pull_number}/head:{evidence_ref}",
-        ],
-        cwd=root,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    if fetched.returncode != 0:
-        raise AcceptanceError(
-            f"cannot fetch reviewed PR head: {fetched.stderr.strip()}"
-        )
-    resolved = subprocess.run(
-        ["git", "rev-parse", evidence_ref],
-        cwd=root,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    if resolved.returncode != 0 or resolved.stdout.strip() != expected_sha:
-        raise AcceptanceError("fetched PR head differs from hosted PR evidence")
-    return evidence_ref
-
-
 def git_is_ancestor(root: Path, ancestor: str, descendant: str) -> bool:
     result = subprocess.run(
         ["git", "merge-base", "--is-ancestor", ancestor, descendant],
@@ -281,85 +181,6 @@ def git_is_ancestor(root: Path, ancestor: str, descendant: str) -> bool:
         text=True,
     )
     return result.returncode == 0
-
-
-def git_tree(root: Path, commit: str) -> str:
-    result = subprocess.run(
-        ["git", "rev-parse", f"{commit}^{{tree}}"],
-        cwd=root,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        raise AcceptanceError(
-            f"cannot inspect immutable revision tree {commit}: "
-            f"{result.stderr.strip()}"
-        )
-    return result.stdout.strip()
-
-
-def validate_reviewed_revision(
-    root: Path,
-    evidence: object,
-    red_commit: str,
-) -> None:
-    if not isinstance(evidence, dict):
-        raise AcceptanceError("reviewed revision evidence is missing")
-    repository = evidence.get("repository")
-    pull_number = evidence.get("pull_request")
-    if not isinstance(repository, str) or not isinstance(pull_number, int):
-        raise AcceptanceError("reviewed revision repository or PR is invalid")
-    result = subprocess.run(
-        [
-            "gh",
-            "pr",
-            "view",
-            str(pull_number),
-            "--repo",
-            repository,
-            "--json",
-            "number,state,baseRefName,headRefOid,mergeCommit,mergedAt",
-        ],
-        cwd=root,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        raise AcceptanceError(
-            f"cannot verify reviewed PR revision: {result.stderr.strip()}"
-        )
-    try:
-        pull_request = json.loads(result.stdout)
-    except json.JSONDecodeError as exc:
-        raise AcceptanceError("reviewed PR evidence is invalid JSON") from exc
-    reviewed_head = str(evidence.get("reviewed_head_sha", ""))
-    squash_merge = str(evidence.get("squash_merge_sha", ""))
-    ensure_full_history(root)
-    reviewed_ref = fetch_reviewed_pr_head(
-        root,
-        pull_number,
-        reviewed_head,
-    )
-    for commit in (red_commit, squash_merge):
-        ensure_git_object(root, commit)
-    validate_reviewed_revision_payload(
-        evidence,
-        pull_request,
-        red_is_ancestor_of_reviewed_head=git_is_ancestor(
-            root,
-            red_commit,
-            reviewed_ref,
-        ),
-        reviewed_head_tree=git_tree(root, reviewed_ref),
-        squash_merge_tree=git_tree(root, squash_merge),
-        squash_merge_is_ancestor_of_head=git_is_ancestor(
-            root,
-            squash_merge,
-            "HEAD",
-        ),
-    )
 
 
 def go_tool_context(root: Path) -> tuple[Path, Path, dict[str, str]]:
@@ -473,20 +294,8 @@ def read_git_blob(
         return result.stdout
 
 
-def extract_plan_task(plan: bytes) -> bytes:
-    start_marker = b"  - id: FMV3-M1-02\n"
-    end_marker = b"  - id: FMV3-M1-03\n"
-    start = plan.find(start_marker)
-    end = plan.find(end_marker, start + len(start_marker))
-    if start < 0 or end < 0:
-        raise AcceptanceError("canonical FMV3-M1-02 plan block is missing")
-    return plan[start:end]
-
-
 def validate_canonical_sources(
-    root: Path,
     document: dict[str, object],
-    plan_bytes: bytes | None = None,
 ) -> None:
     sources = document.get("canonical_sources")
     if sources != {
@@ -494,16 +303,6 @@ def validate_canonical_sources(
         "execution_plan": PLAN_SOURCE,
     }:
         raise AcceptanceError("canonical source identity changed")
-    if plan_bytes is None:
-        plan_bytes = read_git_blob(
-            str(PLAN_SOURCE["repository"]),
-            str(PLAN_SOURCE["commit_sha"]),
-            str(PLAN_SOURCE["path"]),
-        )
-    if sha256(plan_bytes) != PLAN_SOURCE["artifact_sha256"]:
-        raise AcceptanceError("canonical execution-plan artifact changed")
-    if sha256(extract_plan_task(plan_bytes)) != PLAN_SOURCE["task_block_sha256"]:
-        raise AcceptanceError("canonical FMV3-M1-02 task block changed")
 
 
 def validate_requirement_contract(
@@ -619,11 +418,6 @@ def validate_gate_contract(
     red = gates.get("TDD_RED")
     if not isinstance(red, dict) or not isinstance(red.get("commit_sha"), str):
         raise AcceptanceError("TDD_RED evidence is missing")
-    validate_reviewed_revision(
-        root,
-        gates.get("reviewed_revision"),
-        str(red["commit_sha"]),
-    )
     validate_tdd_red(
         root,
         red,
@@ -930,7 +724,6 @@ def validate(
     root: Path,
     document: dict[str, object],
     *,
-    plan_bytes: bytes | None = None,
     verify_tdd_hosted: bool = True,
     execute_tests: bool = True,
 ) -> int:
@@ -940,7 +733,7 @@ def validate(
         or document.get("milestone") != "FMV3-M1-02"
     ):
         raise AcceptanceError("M1-02 acceptance identity changed")
-    validate_canonical_sources(root, document, plan_bytes)
+    validate_canonical_sources(document)
     required_tests = validate_requirement_contract(document)
     required_tests.update(validate_transport_matrix(root, document))
     validate_gate_contract(

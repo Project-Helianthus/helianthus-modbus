@@ -31,10 +31,12 @@ REFERENCES = {
 }
 REQUIREMENTS = {
     "runtime_only_lossless_issuance": {
-        "TestM106RuntimeOnlyIssuanceAndLosslessProvenance"
+        "TestM106RuntimeOnlyIssuanceAndLosslessProvenance",
+        "TestM106NonSuccessfulOutcomesNeverIssueCapabilities",
     },
     "coalesced_independence_copy_shared_claim": {
-        "TestM106CoalescedCapabilitiesAreIndependentAndCopiesShareOneClaim"
+        "TestM106CoalescedCapabilitiesAreIndependentAndCopiesShareOneClaim",
+        "TestM106ConcurrentRegistrationUsesDeclaredOrdinals",
     },
     "membership_close_late_registration": {
         "TestM106MembershipCloseRejectsLateRegistration"
@@ -44,13 +46,15 @@ REQUIREMENTS = {
     },
     "bounded_sequences_reclamation_restart": {
         "TestM106BoundsExhaustionAndDeterministicTombstones",
+        "TestM106RestartExportRetiresSourceAndPreservesSequenceUniqueness",
         "TestM106FailureAndExpiryReclaimSynchronously",
     },
     "opaque_private_state": {
         "TestM106PrivateCapabilityStateIsNotSerializableOrReconstructable"
     },
     "bounded_normalization_activation": {
-        "TestM106NormalizationAndActivationBoundsFailClosed"
+        "TestM106NormalizationAndActivationBoundsFailClosed",
+        "TestM106NormalizationExactSerializationBoundary",
     },
 }
 CI_COMMANDS = (

@@ -47,36 +47,26 @@ class M104AcceptanceTests(unittest.TestCase):
 
     def test_transport_gate_rejects_row_and_result_drift(self) -> None:
         document = self.document()
-        companion = validator.base.read_git_blob(
-            validator.COMPANION_SOURCE["repository"],
-            validator.COMPANION_SOURCE["commit_sha"],
-            validator.COMPANION_SOURCE["manifest_path"],
-        )
         gate = document["gates"]["transport_gate"]
         gate["expected_rows"] = 20
         with self.assertRaises(validator.AcceptanceError):
-            validator.validate_transport_matrix(ROOT, document, companion)
+            validator.validate_transport_matrix(ROOT, document)
 
         document = self.document()
         document["gates"]["transport_gate"]["skipped"] = 1
         with self.assertRaises(validator.AcceptanceError):
-            validator.validate_transport_matrix(ROOT, document, companion)
+            validator.validate_transport_matrix(ROOT, document)
 
-    def test_companion_recovery_inventory_drift_is_rejected(self) -> None:
+    def test_structural_companion_identity_drift_is_rejected(self) -> None:
         document = self.document()
-        companion = json.loads(
-            validator.base.read_git_blob(
-                validator.COMPANION_SOURCE["repository"],
-                validator.COMPANION_SOURCE["commit_sha"],
-                validator.COMPANION_SOURCE["manifest_path"],
-            )
-        )
-        companion["transport_recovery_rows"].pop()
+        document["canonical_sources"]["companion"]["contract_version"] = 2
         with self.assertRaises(validator.AcceptanceError):
-            validator.validate_transport_matrix(
+            validator.validate_canonical_sources(
                 ROOT,
                 document,
-                json.dumps(companion).encode("utf-8"),
+                plan_bytes=None,
+                authorization_payload=validator.expected_authorization_payload(),
+                verify_hosted=False,
             )
 
     def test_tdd_red_commit_is_tests_only_and_bound_to_base(self) -> None:

@@ -24,6 +24,8 @@ EXPECTED_POLICY = {
         "rtu_capability.go",
         "rtu_endpoint.go",
         "rtu_timing.go",
+        "runtime_acquisition.go",
+        "runtime_normalization.go",
         "tcp_adu.go",
         "tcp_coalescing.go",
         "tcp_endpoint.go",
@@ -54,14 +56,20 @@ EXPECTED_POLICY = {
         "rtu_timing.go": (
             "daea0680aa70f1a552fc6facdd35e54161728c673625088c599951d560155231"
         ),
+        "runtime_acquisition.go": (
+            "c0726b2d69ab6082655c145cd7db899e84d2e2e0c112a9154ba58e97765305c7"
+        ),
+        "runtime_normalization.go": (
+            "d8ce1d0653291da473f8f90c69168dfbd2716dfd46852a8d37b49b96b786089f"
+        ),
         "tcp_adu.go": (
             "29468e151d3b241ac49cda6e97be2c1e78561bb41703be347ff0dbf17650c42b"
         ),
         "tcp_coalescing.go": (
-            "d57ec064b99bdfe49d12e608fafc5883e84eec8037aa6ee485602424e2c9be7d"
+            "5c6a0d47b2f3d1b1a52528a235ab2c393abdf42c64d4884a1d1db9d101545269"
         ),
         "tcp_endpoint.go": (
-            "611b85df7221fc2e231b055a58179e891ea7d91a9d6e30c5b7bbede5b949cb36"
+            "64519fa37a524e036d0cf211c6084015fa9ce9561dad0c94bec2b8e28e300a34"
         ),
         "tcp_owner.go": (
             "8ae7286c2795c8b68ab595b174c7d2f56f24686dea98414927d5b3cb9eb2e0aa"
@@ -86,13 +94,16 @@ EXPECTED_POLICY = {
     },
     "trusted_python_tool_sha256": {
         "scripts/validate_m1_02_acceptance.py": (
-            "f4f9e1bb0c5121d734380720c425efa17f739fc7edc84cf2b6efc267574b4eae"
+            "baa07d5babf4b091790ca2ac1f6c56716c1bcc4bca5dea8c52c52c011ada51df"
         ),
         "scripts/validate_m1_03_acceptance.py": (
-            "76f77db807113d40ba92180162abd406845865b472e05ff0440ca47e67558ef7"
+            "456fcd0fe848610c57d3dabcd3a3ca907a2a82533708fc45b1c3845d847ed028"
         ),
         "scripts/validate_m1_04_acceptance.py": (
-            "7b5684e5cc62ab7e66d5abe36abe277d6e077af8280f953202f82d1e43c6102b"
+            "67871ed70775fae195cf3cff90365ebd8ba3d60dfe616d2357977ef63e66fd13"
+        ),
+        "scripts/validate_m1_06_conformance.py": (
+            "087ffad58d49da177f41f42827e3a535d7af102e36baf8358a5e242909bc0d60"
         ),
     },
     "allowed_operations": [
@@ -138,6 +149,7 @@ TRUSTED_PYTHON_TOOL_FILES = {
     "scripts/validate_m1_02_acceptance.py",
     "scripts/validate_m1_03_acceptance.py",
     "scripts/validate_m1_04_acceptance.py",
+    "scripts/validate_m1_06_conformance.py",
 }
 
 
@@ -276,6 +288,22 @@ def validate_read_only_wire_surface(root: Path) -> None:
             "EncodeRTUReadADU",
             "PDU",
         ],
+        "runtime_acquisition.go": [
+            "GobEncode",
+            "GobEncode",
+            "GobEncode",
+            "MarshalBinary",
+            "MarshalBinary",
+            "MarshalBinary",
+            "MarshalJSON",
+            "MarshalJSON",
+            "MarshalJSON",
+            "MarshalJSON",
+            "MarshalJSON",
+            "MarshalText",
+            "MarshalText",
+        ],
+        "runtime_normalization.go": ["Bytes", "MarshalJSON"],
         "tcp_adu.go": [
             "Bytes",
             "EncodeTCPDeviceIDAccessADU",

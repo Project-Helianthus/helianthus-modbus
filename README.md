@@ -25,6 +25,22 @@ constructed independently by package consumers. Device Identification
 traversal is bounded, preserves exact per-segment provenance, and publishes
 only a complete validated aggregate.
 
+`NewRuntimeAcquisitionSource` provides the optional bounded trust root for
+successful TCP logical views. A configured endpoint marks only correlated,
+coherent, still-attached `successful_data` views as eligible. The source binds
+each issued capability to an exact documentary attempt key and a fresh opaque
+attempt instance. Closing freezes ordered membership; claims require that
+exact instance, copied capability views share one one-shot state, and
+`CancelOpen` drains only that instance. Fixture RTU views, synthetic values,
+non-success responses, and offline normalization records have no issuance
+authority. Capability and attempt state cannot be serialized or reconstructed.
+
+Normalization is validated before retention and preserves its exact admitted
+encoding, including bounded unknown extensions. Full wire and logical
+provenance remains separate from capability identity. Live capabilities,
+attempts, claim lifetime, terminal sequences, and non-reconstructing
+tombstones are finite and configured before activation.
+
 `OpenConnection` accepts a raw `*net.TCPConn` in production, verifies its
 remote address against the configured `tcp://<ip-literal>:<port>` identity,
 and claims both the physical remote and the concrete socket globally. A second
@@ -54,7 +70,7 @@ This repository does not own:
 Vendor and standard-family profiles live together in
 [`helianthus-modbusreg`](https://github.com/Project-Helianthus/helianthus-modbusreg).
 Canonical protocol-independent semantics remain owned by
-`helianthus-ebusreg`. Gateway composition is a later, separately authorized
+`helianthus-ebusreg`. Gateway composition is a later operator-requested
 milestone.
 
 ## Phase-One Boundary
@@ -67,8 +83,8 @@ Phase one is read-only. Its complete implemented PDU operation allowlist is:
 
 This list is both the implemented PDU boundary and the ceiling for later
 phase-one transports. There is no generic function-code escape hatch and no
-write PDU, probe, or control API. Write support requires a separate safety plan
-and authorization.
+write PDU, probe, or control API. Write support requires separate safety work
+and action-time confirmation before any live mutation.
 
 M1-02 owns the aggregate FC03/FC04 endpoint. M1-04 owns bounded FC2B/MEI type
 0x0E endpoint execution without exposing a lower-level socket bypass.
@@ -137,20 +153,24 @@ unauthorized Helianthus dependencies and vendor/write surface tokens, and runs
 mutation tests for those boundaries. The product source inventory is closed by
 the `m1_protocol` policy lock. Tests may expand without weakening that product
 inventory, but still pass the same dependency, vendor-token, and read-only
-gates. CI also validates
-[`modbus-companion-consumer-lock-v1.json`](policy/modbus-companion-consumer-lock-v1.json)
-against the exact merged public companion before compiling product code.
+gates. CI validates structural companion identities, acceptance mappings, and
+their behavioral evidence without treating documentation hashes as authority.
+FMV3-M1-06 proves `OPAQUE_RUNTIME_ACQUISITION_V1`
+through the source-owned API and executable behavioral inventory without
+treating a documentation digest as runtime authority. Its RED evidence,
+structural scope stop, and transport regression gate are recorded in
+[`m1-06-conformance.json`](policy/m1-06-conformance.json).
 FMV3-M1-02 runtime evidence is machine-checked by
 [`policy/m1-02-acceptance.json`](policy/m1-02-acceptance.json) against that
-pinned contract. The gate executes every mapped test, requires explicit
+structural contract identity. The gate executes every mapped test, requires explicit
 run/pass events without skips, and locks every test file owned by M1-02 while
 allowing later milestone test manifests to own their own files.
 FMV3-M1-03 is independently locked by
 [`policy/m1-03-acceptance.json`](policy/m1-03-acceptance.json) and its
 fixture-only [RTU transport matrix](policy/m1-03-transport-matrix.json). That
-gate proves the RED chain, canonical authorization, offline-only product
-surface, exact `FIXTURE_ONLY_NO_HARDWARE` disposition, and every mapped RTU
-test. It performs no gateway, serial-device, or physical-hardware validation.
+gate proves the RED chain, offline-only product boundary, exact
+`FIXTURE_ONLY_NO_HARDWARE` disposition, and every mapped RTU test. It performs
+no gateway, serial-device, or physical-hardware validation.
 FMV3-M1-04 is locked by
 [`policy/m1-04-acceptance.json`](policy/m1-04-acceptance.json) and its combined
 [transport matrix](policy/m1-04-transport-matrix.json). It proves bounded TCP
@@ -160,10 +180,12 @@ also performs no gateway, serial-device, or physical-hardware validation.
 The repository follows one issue and one pull request at a time, squash merge,
 strict test-first implementation, and applicable documentation/protocol gates.
 GitHub protects `main` with required `checks` and `lint` jobs, linear history,
-conversation resolution, and disabled merge/rebase commit methods. A separate
-required `adversarial-review` status is emitted only for an exact head that has
-a fresh OpenAI-only `NO_FINDINGS` verdict. All protections apply to
-administrators.
+conversation resolution, and disabled merge/rebase commit methods. Review and
+merge require a fresh exact-HEAD `NO_BLOCKING_FINDINGS` verdict with
+every P0-P2 finding resolved or independently validated by design. P3/P4
+findings are triaged as fix, backlog, or by-design and do not force another
+review round. No external review status or attestation is required. All
+protections apply to administrators.
 See [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md).
 
 ## License

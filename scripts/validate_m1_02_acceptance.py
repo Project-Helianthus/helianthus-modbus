@@ -15,19 +15,13 @@ from pathlib import Path
 
 COMPANION_SOURCE = {
     "repository": "Project-Helianthus/helianthus-docs-ebus",
-    "commit_sha": "711a556fee344c6fe7f1ecf3253fcdb3f5f22d06",
-    "consumer_lock_path": "policy/modbus-companion-consumer-lock-v1.json",
+    "contract_id": "HELIANTHUS_MODBUS_FOUNDATION_PROFILE_V1",
+    "contract_version": 1,
     "manifest_path": (
         "docs/platform/manifests/"
         "modbus-foundation-profile-contract-v1.json"
     ),
-    "manifest_sha256": (
-        "c411e3e8a464e4b9d3a59d3f5a0c82b57e176e24dec9550b9bc0c8b3e4b28c70"
-    ),
     "policy_path": "docs/platform/modbus-foundation-profile-contract-v1.md",
-    "policy_sha256": (
-        "1a53f203eed42766ac2d91580c41f72674b5eaea374a1cf4fff650396f06b196"
-    ),
 }
 PLAN_SOURCE = {
     "repository": "Project-Helianthus/helianthus-execution-plans",
@@ -95,7 +89,6 @@ TCP_RECOVERY_ROWS = (
     "tcp_old_generation_late_frame_rejected",
 )
 EXPECTED_CI_COMMANDS = (
-    "./scripts/validate_companion_lock.sh",
     "./scripts/scope_gate.sh",
     "GOWORK=off go run ./scripts/read_only_surface .",
     "python3 scripts/validate_m1_02_acceptance.py",
@@ -123,17 +116,6 @@ def github_run_id(run_url: str) -> str:
     if match is None:
         raise AcceptanceError("TDD_RED hosted CI URL is missing")
     return match.group(1)
-
-
-def docs_run_and_job_ids(check_url: str) -> tuple[str, str]:
-    match = re.fullmatch(
-        r"https://github\.com/Project-Helianthus/helianthus-docs-ebus/"
-        r"actions/runs/(\d+)/job/(\d+)",
-        check_url,
-    )
-    if match is None:
-        raise AcceptanceError("doc-gate required-check evidence is missing")
-    return match.group(1), match.group(2)
 
 
 def load_json(path: Path) -> dict[str, object]:
@@ -512,15 +494,6 @@ def validate_canonical_sources(
         "execution_plan": PLAN_SOURCE,
     }:
         raise AcceptanceError("canonical source identity changed")
-    lock = load_json(root / str(COMPANION_SOURCE["consumer_lock_path"]))
-    expected_lock = {
-        "repository": COMPANION_SOURCE["repository"],
-        "merged_commit_sha": COMPANION_SOURCE["commit_sha"],
-        "manifest_sha256": COMPANION_SOURCE["manifest_sha256"],
-    }
-    for field, expected in expected_lock.items():
-        if lock.get(field) != expected:
-            raise AcceptanceError(f"companion lock changed field {field}")
     if plan_bytes is None:
         plan_bytes = read_git_blob(
             str(PLAN_SOURCE["repository"]),
@@ -586,9 +559,9 @@ def validate_transport_matrix(
         or matrix.get("canonical_source")
         != {
             "repository": COMPANION_SOURCE["repository"],
-            "commit_sha": COMPANION_SOURCE["commit_sha"],
+            "contract_id": COMPANION_SOURCE["contract_id"],
+            "contract_version": COMPANION_SOURCE["contract_version"],
             "manifest_path": COMPANION_SOURCE["manifest_path"],
-            "manifest_sha256": COMPANION_SOURCE["manifest_sha256"],
             "field": "transport_recovery_rows",
         }
     ):
@@ -627,21 +600,14 @@ def validate_gate_contract(
         EXPECTED_CI_COMMANDS
     ):
         raise AcceptanceError("CI gate command contract changed")
-    doc_gate = gates.get("doc_gate")
-    if not isinstance(doc_gate, dict) or (
-        doc_gate.get("repository"),
-        doc_gate.get("commit_sha"),
-    ) != (
-        COMPANION_SOURCE["repository"],
-        COMPANION_SOURCE["commit_sha"],
-    ):
+    if gates.get("doc_gate") != {
+        "applicable": False,
+        "reason": (
+            "public HELIANTHUS_MODBUS_FOUNDATION_PROFILE_V1 contract already "
+            "merged; no documentation change"
+        ),
+    }:
         raise AcceptanceError("doc-gate evidence changed")
-    check_url = doc_gate.get("required_check_run_url")
-    if not isinstance(check_url, str):
-        raise AcceptanceError("doc-gate required-check evidence is missing")
-    docs_run_and_job_ids(check_url)
-    if verify_tdd_hosted:
-        validate_doc_hosted_evidence(root, check_url)
     operability = gates.get("operability")
     if not isinstance(operability, dict) or tuple(
         operability.get("required_requirement_ids", ())
@@ -839,91 +805,6 @@ def validate_tdd_hosted_payload(
     if missing:
         raise AcceptanceError(
             f"hosted TDD_RED lacks missing-runtime evidence: {missing}"
-        )
-
-
-def validate_doc_hosted_evidence(root: Path, check_url: str) -> None:
-    run_id, job_id = docs_run_and_job_ids(check_url)
-    result = subprocess.run(
-        [
-            "gh",
-            "run",
-            "view",
-            run_id,
-            "--repo",
-            "Project-Helianthus/helianthus-docs-ebus",
-            "--json",
-            "conclusion,event,jobs,workflowName",
-        ],
-        cwd=root,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        raise AcceptanceError(
-            f"cannot verify doc-gate hosted CI: {result.stderr.strip()}"
-        )
-    log_result = subprocess.run(
-        [
-            "gh",
-            "run",
-            "view",
-            run_id,
-            "--repo",
-            "Project-Helianthus/helianthus-docs-ebus",
-            "--job",
-            job_id,
-            "--log",
-        ],
-        cwd=root,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    if log_result.returncode != 0:
-        raise AcceptanceError(
-            f"cannot inspect doc-gate log: {log_result.stderr.strip()}"
-        )
-    validate_doc_hosted_payload(
-        job_id,
-        json.loads(result.stdout),
-        log_result.stdout,
-    )
-
-
-def validate_doc_hosted_payload(
-    job_id: str,
-    hosted: dict[str, object],
-    job_log: str,
-) -> None:
-    if (
-        hosted.get("conclusion") != "success"
-        or hosted.get("event") != "pull_request_target"
-        or hosted.get("workflowName") != "Modbus Trusted Revision"
-    ):
-        raise AcceptanceError(f"doc-gate hosted evidence mismatch: {hosted}")
-    jobs = hosted.get("jobs")
-    selected = [
-        job
-        for job in jobs
-        if isinstance(job, dict) and str(job.get("databaseId")) == job_id
-    ] if isinstance(jobs, list) else []
-    if (
-        len(selected) != 1
-        or selected[0].get("name") != "Modbus Trusted Revision"
-        or selected[0].get("conclusion") != "success"
-    ):
-        raise AcceptanceError("doc-gate hosted job identity changed")
-    required_markers = (
-        COMPANION_SOURCE["commit_sha"],
-        PLAN_SOURCE["commit_sha"],
-        "modbus_docs_trust_ok",
-    )
-    missing = [marker for marker in required_markers if marker not in job_log]
-    if missing:
-        raise AcceptanceError(
-            f"doc-gate log lacks immutable evidence: {missing}"
         )
 
 

@@ -2,6 +2,7 @@ package modbus
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -123,7 +124,7 @@ func runtimeSuccessfulViewsForTest(
 		responseADU = append(responseADU, byte(word>>8), byte(word))
 	}
 	sent := endpointSendFrame(peer, responseADU)
-	batch, err := endpoint.Read(t.Context(), connection)
+	batch, err := endpoint.Read(context.Background(), connection)
 	if err != nil {
 		t.Fatalf("Read: %v", err)
 	}
@@ -302,6 +303,47 @@ func TestM106RuntimeOnlyIssuanceAndLosslessProvenance(t *testing.T) {
 	if issued, err := source.Issue(missingAttempt, LogicalReadView{}, runtimeRecord); !errors.Is(err, ErrRuntimeAcquisitionUnavailable) || issued.Valid() {
 		t.Fatalf("synthetic issued=%#v err=%v", issued, err)
 	}
+	if _, err := missingAttempt.Close(nil); !errors.Is(err, ErrRuntimeAttemptMembership) {
+		t.Fatalf("synthetic close err=%v", err)
+	}
+
+	rtuEndpoint, rtuClock, _ := newRTUTestEndpoint(t)
+	defer func() { _ = rtuEndpoint.Close() }()
+	handle := beginRTUTestRead(t, rtuEndpoint)
+	if err := rtuEndpoint.CompleteTransmit(handle, TransmitComplete); err != nil {
+		t.Fatalf("RTU CompleteTransmit: %v", err)
+	}
+	rtuResult, err := observeRTUTestFrame(
+		rtuEndpoint,
+		rtuClock,
+		rtuTestFrame(1, 0x03, 0x06, 0, 1, 0, 2, 0, 3),
+	)
+	if err != nil {
+		t.Fatalf("RTU fixture response: %v", err)
+	}
+	rtuView, ok := rtuResult.LogicalView()
+	if !ok {
+		t.Fatal("RTU fixture did not produce its offline logical view")
+	}
+	rtuAttempt, err := source.BeginAttempt("attempt-rtu-fixture")
+	if err != nil {
+		t.Fatalf("BeginAttempt(RTU fixture): %v", err)
+	}
+	rtuRecord := runtimeNormalizationForTest(
+		t,
+		source,
+		RuntimeAcquisitionSourceRuntime,
+		"rtu-fixture",
+		rtuView.LogicalOffset(),
+		rtuView.LogicalWordCount(),
+		"",
+	)
+	if issued, err := source.Issue(rtuAttempt, rtuView, rtuRecord); !errors.Is(err, ErrRuntimeAcquisitionUnavailable) || issued.Valid() {
+		t.Fatalf("RTU fixture issued=%#v err=%v", issued, err)
+	}
+	if _, err := rtuAttempt.Close(nil); !errors.Is(err, ErrRuntimeAttemptMembership) {
+		t.Fatalf("RTU fixture close err=%v", err)
+	}
 }
 
 func TestM106CoalescedCapabilitiesAreIndependentAndCopiesShareOneClaim(t *testing.T) {
@@ -416,39 +458,93 @@ func TestM106MembershipCloseRejectsLateRegistration(t *testing.T) {
 	if err := <-issueErr; !errors.Is(err, ErrRuntimeAttemptClosed) {
 		t.Fatalf("late registration err=%v", err)
 	}
+	source.beforeMembership = nil
 	if snapshot := source.Snapshot(); snapshot.LiveCapabilities != 0 ||
 		snapshot.ActiveAttempts != 0 {
 		t.Fatalf("late registration retained source state: %#v", snapshot)
+	}
+
+	orderedViews := runtimeSuccessfulViewsForTest(
+		t,
+		source,
+		clock,
+		[]runtimeReadForTest{
+			{logicalViewID: 302, offset: 41, quantity: 1},
+			{logicalViewID: 303, offset: 41, quantity: 1},
+		},
+		[]uint16{0x3334},
+	)
+	orderedAttempt, err := source.BeginAttempt("attempt-exact-order")
+	if err != nil {
+		t.Fatalf("BeginAttempt(order): %v", err)
+	}
+	first := issueRuntimeAcquisitionForTest(
+		t,
+		source,
+		orderedAttempt,
+		orderedViews[0],
+		"ordered-first",
+	)
+	second := issueRuntimeAcquisitionForTest(
+		t,
+		source,
+		orderedAttempt,
+		orderedViews[1],
+		"ordered-second",
+	)
+	if _, err := orderedAttempt.Close([]RuntimeAcquisition{second, first}); !errors.Is(err, ErrRuntimeAttemptMembership) {
+		t.Fatalf("permuted membership close err=%v", err)
+	}
+	for _, acquisition := range []RuntimeAcquisition{first, second} {
+		result, err := acquisition.Capability().Claim(RuntimeAttemptInstance{
+			token: orderedAttempt.token,
+		})
+		if err != nil || result.Won ||
+			result.Outcome != RuntimeCapabilityCancelled {
+			t.Fatalf("permuted member result=%#v err=%v", result, err)
+		}
 	}
 }
 
 func TestM106CancelOpenUsesExactInstanceAndDrainsMembers(t *testing.T) {
 	clock := &virtualTCPClock{}
 	source := newRuntimeAcquisitionSourceForTest(t, clock)
-	views := runtimeSuccessfulViewsForTest(
+	firstViews := runtimeSuccessfulViewsForTest(
 		t,
 		source,
 		clock,
 		[]runtimeReadForTest{
 			{logicalViewID: 401, offset: 50, quantity: 1},
-			{logicalViewID: 402, offset: 51, quantity: 1},
+			{logicalViewID: 402, offset: 50, quantity: 1},
 		},
-		[]uint16{0x4444, 0x5555},
+		[]uint16{0x4444},
 	)
+	secondView := runtimeSuccessfulViewsForTest(
+		t,
+		source,
+		clock,
+		[]runtimeReadForTest{{logicalViewID: 403, offset: 50, quantity: 1}},
+		[]uint16{0x4444},
+	)[0]
 	firstAttempt, err := source.BeginAttempt("same-key")
 	if err != nil {
 		t.Fatalf("BeginAttempt(first): %v", err)
 	}
-	first := issueRuntimeAcquisitionForTest(t, source, firstAttempt, views[0], "same-key-a")
-	firstInstance, err := firstAttempt.Close([]RuntimeAcquisition{first})
+	first := issueRuntimeAcquisitionForTest(t, source, firstAttempt, firstViews[0], "same-key-a")
+	firstOpen := issueRuntimeAcquisitionForTest(t, source, firstAttempt, firstViews[1], "same-key-open")
+	firstInstance, err := firstAttempt.Close([]RuntimeAcquisition{first, firstOpen})
 	if err != nil {
 		t.Fatalf("Close(first): %v", err)
+	}
+	if result, err := first.Capability().Claim(firstInstance); err != nil ||
+		!result.Won || result.Outcome != RuntimeCapabilityClaimed {
+		t.Fatalf("Claim(first terminal member)=%#v err=%v", result, err)
 	}
 	secondAttempt, err := source.BeginAttempt("same-key")
 	if err != nil {
 		t.Fatalf("BeginAttempt(second): %v", err)
 	}
-	second := issueRuntimeAcquisitionForTest(t, source, secondAttempt, views[1], "same-key-b")
+	second := issueRuntimeAcquisitionForTest(t, source, secondAttempt, secondView, "same-key-b")
 	secondInstance, err := secondAttempt.Close([]RuntimeAcquisition{second})
 	if err != nil {
 		t.Fatalf("Close(second): %v", err)
@@ -458,8 +554,13 @@ func TestM106CancelOpenUsesExactInstanceAndDrainsMembers(t *testing.T) {
 	}
 	firstResult, err := first.Capability().Claim(firstInstance)
 	if err != nil || firstResult.Won ||
-		firstResult.Outcome != RuntimeCapabilityCancelled {
+		firstResult.Outcome != RuntimeCapabilityClaimed {
 		t.Fatalf("first result=%#v err=%v", firstResult, err)
+	}
+	firstOpenResult, err := firstOpen.Capability().Claim(firstInstance)
+	if err != nil || firstOpenResult.Won ||
+		firstOpenResult.Outcome != RuntimeCapabilityCancelled {
+		t.Fatalf("first open result=%#v err=%v", firstOpenResult, err)
 	}
 	secondResult, err := second.Capability().Claim(secondInstance)
 	if err != nil || !secondResult.Won ||
@@ -475,6 +576,7 @@ func TestM106BoundsExhaustionAndDeterministicTombstones(t *testing.T) {
 	clock := &virtualTCPClock{}
 	config := runtimeAcquisitionConfigForTest(clock)
 	config.Limits.MaxLiveCapabilities = 2
+	config.Limits.MaxMembersPerAttempt = 2
 	config.Limits.CapabilityTombstoneLimit = 2
 	source, err := NewRuntimeAcquisitionSource(config)
 	if err != nil {
@@ -486,10 +588,10 @@ func TestM106BoundsExhaustionAndDeterministicTombstones(t *testing.T) {
 		clock,
 		[]runtimeReadForTest{
 			{logicalViewID: 501, offset: 60, quantity: 1},
-			{logicalViewID: 502, offset: 61, quantity: 1},
-			{logicalViewID: 503, offset: 62, quantity: 1},
+			{logicalViewID: 502, offset: 60, quantity: 1},
+			{logicalViewID: 503, offset: 60, quantity: 1},
 		},
-		[]uint16{0x5001, 0x5002, 0x5003},
+		[]uint16{0x5001},
 	)
 	firstAttempt, _ := source.BeginAttempt("bounded-a")
 	secondAttempt, _ := source.BeginAttempt("bounded-b")
@@ -501,7 +603,7 @@ func TestM106BoundsExhaustionAndDeterministicTombstones(t *testing.T) {
 		source,
 		RuntimeAcquisitionSourceRuntime,
 		"bounded-c",
-		62,
+		60,
 		1,
 		"",
 	)
@@ -516,11 +618,11 @@ func TestM106BoundsExhaustionAndDeterministicTombstones(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Close(second): %v", err)
 	}
-	if result, err := first.Capability().Claim(firstInstance); err != nil || !result.Won {
-		t.Fatalf("Claim(first)=%#v err=%v", result, err)
-	}
 	if err := source.CancelOpen(secondInstance); err != nil {
 		t.Fatalf("CancelOpen(second): %v", err)
+	}
+	if result, err := first.Capability().Claim(firstInstance); err != nil || !result.Won {
+		t.Fatalf("Claim(first)=%#v err=%v", result, err)
 	}
 	fourthView := runtimeSuccessfulViewsForTest(
 		t,
@@ -575,9 +677,9 @@ func TestM106BoundsExhaustionAndDeterministicTombstones(t *testing.T) {
 		clock,
 		[]runtimeReadForTest{
 			{logicalViewID: 505, offset: 64, quantity: 1},
-			{logicalViewID: 506, offset: 65, quantity: 1},
+			{logicalViewID: 506, offset: 64, quantity: 1},
 		},
-		[]uint16{0x5005, 0x5006},
+		[]uint16{0x5005},
 	)
 	lastAttempt, _ := exhausted.BeginAttempt("last-sequence")
 	last := issueRuntimeAcquisitionForTest(t, exhausted, lastAttempt, exhaustedViews[0], "last")
@@ -587,12 +689,15 @@ func TestM106BoundsExhaustionAndDeterministicTombstones(t *testing.T) {
 		exhausted,
 		RuntimeAcquisitionSourceRuntime,
 		"exhausted",
-		65,
+		64,
 		1,
 		"",
 	)
 	if blocked, err := exhausted.Issue(blockedAttempt, exhaustedViews[1], blockedRecord); !errors.Is(err, ErrRuntimeTerminalSequenceExhausted) || blocked.Valid() {
 		t.Fatalf("exhausted issue=%#v err=%v", blocked, err)
+	}
+	if _, err := blockedAttempt.Close(nil); !errors.Is(err, ErrRuntimeAttemptMembership) {
+		t.Fatalf("exhausted attempt close err=%v", err)
 	}
 	lastInstance, err := lastAttempt.Close([]RuntimeAcquisition{last})
 	if err != nil {
@@ -603,9 +708,57 @@ func TestM106BoundsExhaustionAndDeterministicTombstones(t *testing.T) {
 	}
 	lastSnapshot := exhausted.Snapshot()
 	if !lastSnapshot.SequenceExhausted ||
+		lastSnapshot.ActiveAttempts != 0 ||
 		len(lastSnapshot.Tombstones) != 1 ||
 		lastSnapshot.Tombstones[0].TerminalSequence != math.MaxUint64 {
 		t.Fatalf("exhausted snapshot=%#v", lastSnapshot)
+	}
+}
+
+func TestM106FailureAndExpiryReclaimSynchronously(t *testing.T) {
+	clock := &virtualTCPClock{}
+	source := newRuntimeAcquisitionSourceForTest(t, clock)
+	views := runtimeSuccessfulViewsForTest(
+		t,
+		source,
+		clock,
+		[]runtimeReadForTest{
+			{logicalViewID: 551, offset: 66, quantity: 1},
+			{logicalViewID: 552, offset: 66, quantity: 1},
+		},
+		[]uint16{0x5501},
+	)
+	attempt, err := source.BeginAttempt("failure-expiry")
+	if err != nil {
+		t.Fatalf("BeginAttempt: %v", err)
+	}
+	failed := issueRuntimeAcquisitionForTest(t, source, attempt, views[0], "failed")
+	expired := issueRuntimeAcquisitionForTest(t, source, attempt, views[1], "expired")
+	instance, err := attempt.Close([]RuntimeAcquisition{failed, expired})
+	if err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if outcome, err := source.FailOpen(failed.Capability()); err != nil ||
+		outcome != RuntimeCapabilityFailed {
+		t.Fatalf("FailOpen outcome=%q err=%v", outcome, err)
+	}
+	clock.Advance(time.Minute)
+	if count := source.ExpireOpen(); count != 1 {
+		t.Fatalf("ExpireOpen count=%d", count)
+	}
+	failedClaim, err := failed.Capability().Claim(instance)
+	if err != nil || failedClaim.Won ||
+		failedClaim.Outcome != RuntimeCapabilityFailed {
+		t.Fatalf("failed claim=%#v err=%v", failedClaim, err)
+	}
+	expiredClaim, err := expired.Capability().Claim(instance)
+	if err != nil || expiredClaim.Won ||
+		expiredClaim.Outcome != RuntimeCapabilityExpired {
+		t.Fatalf("expired claim=%#v err=%v", expiredClaim, err)
+	}
+	if snapshot := source.Snapshot(); snapshot.LiveCapabilities != 0 ||
+		snapshot.ActiveAttempts != 0 {
+		t.Fatalf("failure/expiry retained live state: %#v", snapshot)
 	}
 }
 
@@ -640,6 +793,28 @@ func TestM106PrivateCapabilityStateIsNotSerializableOrReconstructable(t *testing
 			t.Fatalf("json.Marshal(%T)=%q err=%v", value, encoded, err)
 		}
 	}
+	jsonTargets := []any{
+		&RuntimeAcquisitionSource{},
+		&RuntimeAttempt{},
+		&RuntimeAttemptInstance{},
+		&RuntimeAcquisition{},
+		&RuntimeAcquisitionCapability{},
+	}
+	for _, target := range jsonTargets {
+		if err := json.Unmarshal([]byte(`{}`), target); !errors.Is(err, ErrOpaqueRuntimeState) {
+			t.Fatalf("json.Unmarshal(%T) err=%v", target, err)
+		}
+	}
+	capability := acquisition.Capability()
+	if err := capability.UnmarshalText([]byte("forged")); !errors.Is(err, ErrOpaqueRuntimeState) {
+		t.Fatalf("capability UnmarshalText err=%v", err)
+	}
+	if err := capability.UnmarshalBinary([]byte{1}); !errors.Is(err, ErrOpaqueRuntimeState) {
+		t.Fatalf("capability UnmarshalBinary err=%v", err)
+	}
+	if err := capability.GobDecode([]byte{1}); !errors.Is(err, ErrOpaqueRuntimeState) {
+		t.Fatalf("capability GobDecode err=%v", err)
+	}
 	if _, err := (RuntimeAcquisitionCapability{}).Claim(instance); !errors.Is(err, ErrRuntimeAcquisitionUnavailable) {
 		t.Fatalf("zero capability Claim err=%v", err)
 	}
@@ -653,6 +828,12 @@ func TestM106PrivateCapabilityStateIsNotSerializableOrReconstructable(t *testing
 
 func TestM106NormalizationAndActivationBoundsFailClosed(t *testing.T) {
 	clock := &virtualTCPClock{}
+	if count := (&RuntimeAcquisitionSource{}).ExpireOpen(); count != 0 {
+		t.Fatalf("zero source expired capabilities=%d", count)
+	}
+	if _, err := (&RuntimeAcquisitionSource{}).ExportRestartState(); !errors.Is(err, ErrRuntimeAcquisitionUnavailable) {
+		t.Fatalf("zero source restart err=%v", err)
+	}
 	valid := runtimeAcquisitionConfigForTest(clock)
 	tests := []struct {
 		name   string
@@ -686,6 +867,9 @@ func TestM106NormalizationAndActivationBoundsFailClosed(t *testing.T) {
 		[]byte(`{"schema_version":1,"schema_version":1,"source_kind":"runtime"}`),
 		[]byte(`{"schema_version":1,"source_kind":"runtime","source_evidence_id":"x","documentary_notation":"4xxxx","documentary_address":40001,"documentary_address_base":"holding_reference_4xxxx","function_code":3,"logical_table":"holding_registers","normalized_zero_based_pdu_offset":0,"word_count":1,"schema_version":1}`),
 	}
+	invalidUTF8 := []byte(`{"schema_version":1,"source_kind":"runtime","source_evidence_id":"x","documentary_notation":"4xxxx","documentary_address":40001,"documentary_address_base":"holding_reference_4xxxx","function_code":3,"logical_table":"holding_registers","normalized_zero_based_pdu_offset":0,"word_count":1}`)
+	invalidUTF8[bytes.Index(invalidUTF8, []byte(`"x"`))+1] = 0xff
+	invalidRecords = append(invalidRecords, invalidUTF8)
 	for _, encoded := range invalidRecords {
 		if record, err := source.ParseNormalizationRecord(encoded); err == nil || record.Valid() {
 			t.Fatalf("invalid normalization accepted: %s", encoded)

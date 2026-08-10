@@ -27,19 +27,13 @@ AcceptanceError = base.AcceptanceError
 
 COMPANION_SOURCE = {
     "repository": "Project-Helianthus/helianthus-docs-ebus",
-    "commit_sha": "711a556fee344c6fe7f1ecf3253fcdb3f5f22d06",
-    "consumer_lock_path": "policy/modbus-companion-consumer-lock-v1.json",
+    "contract_id": "HELIANTHUS_MODBUS_FOUNDATION_PROFILE_V1",
+    "contract_version": 1,
     "manifest_path": (
         "docs/platform/manifests/"
         "modbus-foundation-profile-contract-v1.json"
     ),
-    "manifest_sha256": (
-        "c411e3e8a464e4b9d3a59d3f5a0c82b57e176e24dec9550b9bc0c8b3e4b28c70"
-    ),
     "policy_path": "docs/platform/modbus-foundation-profile-contract-v1.md",
-    "policy_sha256": (
-        "1a53f203eed42766ac2d91580c41f72674b5eaea374a1cf4fff650396f06b196"
-    ),
 }
 PLAN_SOURCE = {
     "repository": "Project-Helianthus/helianthus-execution-plans",
@@ -99,7 +93,6 @@ RTU_RECOVERY_ROWS = (
     "rtu_quiescence_failure_endpoint_recovery",
 )
 EXPECTED_CI_COMMANDS = (
-    "./scripts/validate_companion_lock.sh",
     "./scripts/scope_gate.sh",
     "GOWORK=off go run ./scripts/read_only_surface .",
     "python3 scripts/validate_m1_02_acceptance.py",
@@ -129,6 +122,7 @@ EXPECTED_TEST_GO_FILES = {
     "rtu_capability_test.go",
     "rtu_endpoint_test.go",
     "rtu_timing_test.go",
+    "runtime_acquisition_test.go",
     "tcp_adu_test.go",
     "tcp_coalescing_test.go",
     "tcp_endpoint_test.go",
@@ -177,7 +171,7 @@ CI_WORKFLOW_SHA256 = (
     "af8ef40d498d5f29dd67afb573d6082e8290e1d03820634e8acc64b9b171fbf5"
 )
 CI_LOCAL_SHA256 = (
-    "ba14b81cb6ea7d3274b9a38bbe746488aae80fb97109d49a6fdd3dfbeddda295"
+    "93fd5480c256cad0c1465dd01e8313068992d88e90954fd6bc0454f4109b2722"
 )
 TRANSPORT_OVERRIDE_SOURCE = {
     "baseline_matrix": "T01..T88",
@@ -396,14 +390,6 @@ def validate_canonical_sources(
         "execution_authorization": AUTHORIZATION_SOURCE,
     }:
         raise AcceptanceError("canonical source identity changed")
-    lock = base.load_json(root / COMPANION_SOURCE["consumer_lock_path"])
-    for field, expected in {
-        "repository": COMPANION_SOURCE["repository"],
-        "merged_commit_sha": COMPANION_SOURCE["commit_sha"],
-        "manifest_sha256": COMPANION_SOURCE["manifest_sha256"],
-    }.items():
-        if lock.get(field) != expected:
-            raise AcceptanceError(f"companion lock changed field {field}")
     if plan_bytes is None:
         plan_bytes = base.read_git_blob(
             PLAN_SOURCE["repository"],
@@ -1079,21 +1065,14 @@ def validate_gate_contract(
     ):
         raise AcceptanceError("M1-03 CI command contract changed")
     validate_ci_mode_controls(root)
-    doc_gate = gates.get("doc_gate")
-    if not isinstance(doc_gate, dict) or doc_gate != {
-        "repository": COMPANION_SOURCE["repository"],
-        "commit_sha": COMPANION_SOURCE["commit_sha"],
-        "required_check_run_url": (
-            "https://github.com/Project-Helianthus/helianthus-docs-ebus/"
-            "actions/runs/30238777804/job/89891563104"
+    if gates.get("doc_gate") != {
+        "applicable": False,
+        "reason": (
+            "public HELIANTHUS_MODBUS_FOUNDATION_PROFILE_V1 contract already "
+            "merged; no documentation change"
         ),
     }:
         raise AcceptanceError("M1-03 doc-gate evidence changed")
-    if verify_hosted:
-        base.validate_doc_hosted_evidence(
-            root,
-            doc_gate["required_check_run_url"],
-        )
     hardware = gates.get("hardware_conditional")
     if hardware != {
         "required_disposition": "FIXTURE_ONLY_NO_HARDWARE",

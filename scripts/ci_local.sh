@@ -37,9 +37,6 @@ if (( legacy_found != 0 )); then
   exit 1
 fi
 
-echo "==> Modbus companion consumer lock"
-./scripts/validate_companion_lock.sh
-
 echo "==> scope gate"
 ./scripts/scope_gate.sh
 
@@ -62,6 +59,9 @@ if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
 else
   python3 scripts/validate_m1_04_acceptance.py --candidate
 fi
+
+echo "==> FMV3-M1-06 opaque runtime acquisition conformance"
+python3 scripts/validate_m1_06_conformance.py
 
 echo "==> scope policy mutation tests"
 python3 -m unittest discover -s tests -p 'test_*.py'

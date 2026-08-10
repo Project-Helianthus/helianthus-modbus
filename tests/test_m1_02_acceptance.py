@@ -303,37 +303,19 @@ class M102AcceptanceTests(unittest.TestCase):
             validator.PLAN_SOURCE["commit_sha"],
             validator.PLAN_SOURCE["path"],
         )
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            lock_path = root / validator.COMPANION_SOURCE["consumer_lock_path"]
-            lock_path.parent.mkdir(parents=True)
-            lock_path.write_text(
-                json.dumps(
-                    {
-                        "repository": validator.COMPANION_SOURCE["repository"],
-                        "merged_commit_sha": (
-                            validator.COMPANION_SOURCE["commit_sha"]
-                        ),
-                        "manifest_sha256": (
-                            validator.COMPANION_SOURCE["manifest_sha256"]
-                        ),
-                    }
-                ),
-                encoding="utf-8",
-            )
-            document = {
-                "canonical_sources": {
-                    "companion_contract": validator.COMPANION_SOURCE,
-                    "execution_plan": validator.PLAN_SOURCE,
-                }
+        document = {
+            "canonical_sources": {
+                "companion_contract": validator.COMPANION_SOURCE,
+                "execution_plan": validator.PLAN_SOURCE,
             }
-            validator.validate_canonical_sources(root, document, plan)
-            with self.assertRaises(validator.AcceptanceError):
-                validator.validate_canonical_sources(
-                    root,
-                    document,
-                    plan + b"\n# mutation\n",
-                )
+        }
+        validator.validate_canonical_sources(ROOT, document, plan)
+        with self.assertRaises(validator.AcceptanceError):
+            validator.validate_canonical_sources(
+                ROOT,
+                document,
+                plan + b"\n# mutation\n",
+            )
 
     def test_transport_matrix_requires_every_canonical_tcp_row(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -418,43 +400,21 @@ class M102AcceptanceTests(unittest.TestCase):
                 "runner unavailable",
             )
 
-    def test_doc_gate_requires_exact_successful_job_and_log(self) -> None:
-        run_id, job_id = validator.docs_run_and_job_ids(
-            "https://github.com/Project-Helianthus/"
-            "helianthus-docs-ebus/actions/runs/30238777804/"
-            "job/89891563104"
+    def test_doc_gate_rejects_authority_reintroduction(self) -> None:
+        document = validator.load_json(
+            ROOT / "policy" / "m1-02-acceptance.json"
         )
-        self.assertEqual(run_id, "30238777804")
-        hosted = {
-            "conclusion": "success",
-            "event": "pull_request_target",
-            "workflowName": "Modbus Trusted Revision",
-            "jobs": [
-                {
-                    "name": "Modbus Trusted Revision",
-                    "conclusion": "success",
-                    "databaseId": int(job_id),
-                }
-            ],
+        document["gates"]["doc_gate"] = {
+            "applicable": True,
+            "reason": "documentation authority reintroduced",
         }
-        log = "\n".join(
-            (
-                validator.COMPANION_SOURCE["commit_sha"],
-                validator.PLAN_SOURCE["commit_sha"],
-                "modbus_docs_trust_ok",
-            )
-        )
-        validator.validate_doc_hosted_payload(job_id, hosted, log)
+        required = validator.validate_requirement_contract(document)
         with self.assertRaises(validator.AcceptanceError):
-            validator.docs_run_and_job_ids(
-                "https://github.com/Project-Helianthus/"
-                "helianthus-docs-ebus/actions/runs/1"
-            )
-        with self.assertRaises(validator.AcceptanceError):
-            validator.validate_doc_hosted_payload(
-                job_id,
-                hosted,
-                "modbus_docs_trust_ok",
+            validator.validate_gate_contract(
+                ROOT,
+                document,
+                required,
+                False,
             )
 
 

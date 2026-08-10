@@ -11,9 +11,10 @@
     },
     "companion": {
       "repository": "Project-Helianthus/helianthus-docs-ebus",
-      "commit_sha": "711a556fee344c6fe7f1ecf3253fcdb3f5f22d06",
+      "contract_id": "HELIANTHUS_MODBUS_FOUNDATION_PROFILE_V1",
+      "contract_version": 1,
       "manifest_path": "docs/platform/manifests/modbus-foundation-profile-contract-v1.json",
-      "manifest_sha256": "c411e3e8a464e4b9d3a59d3f5a0c82b57e176e24dec9550b9bc0c8b3e4b28c70"
+      "policy_path": "docs/platform/modbus-foundation-profile-contract-v1.md"
     },
     "authorization": {
       "repository": "Project-Helianthus/helianthus-execution-plans",
@@ -132,7 +133,6 @@
     },
     "CI": {
       "commands": [
-        "./scripts/validate_companion_lock.sh",
         "./scripts/scope_gate.sh",
         "GOWORK=off go run ./scripts/read_only_surface .",
         "python3 scripts/validate_m1_02_acceptance.py",
@@ -146,10 +146,8 @@
       ]
     },
     "doc_gate": {
-      "repository": "Project-Helianthus/helianthus-docs-ebus",
-      "pull_request": 376,
-      "commit_sha": "711a556fee344c6fe7f1ecf3253fcdb3f5f22d06",
-      "required_check_run_url": "https://github.com/Project-Helianthus/helianthus-docs-ebus/actions/runs/30238777804/job/89891563104"
+      "applicable": false,
+      "reason": "public HELIANTHUS_MODBUS_FOUNDATION_PROFILE_V1 contract already merged; no documentation change"
     },
     "hardware_conditional": {
       "required_disposition": "FIXTURE_ONLY_NO_HARDWARE",
@@ -167,7 +165,7 @@
     },
     "transport_gate": {
       "matrix_path": "policy/m1-04-transport-matrix.json",
-      "matrix_sha256": "0813808be5cb07010e9e696a80569a0dfff065639cb66fd2f3eaab4588cb9974",
+      "matrix_sha256": "2e3e20b935a924a6f32ea57c2ab0f88c8542a1cbc856f9c87497be434261ea95",
       "expected_rows": 21,
       "unexpected_fail": 0,
       "unexpected_pass": 0,

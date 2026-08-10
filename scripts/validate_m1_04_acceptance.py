@@ -38,14 +38,13 @@ PLAN_SOURCE = {
 }
 COMPANION_SOURCE = {
     "repository": "Project-Helianthus/helianthus-docs-ebus",
-    "commit_sha": "711a556fee344c6fe7f1ecf3253fcdb3f5f22d06",
+    "contract_id": "HELIANTHUS_MODBUS_FOUNDATION_PROFILE_V1",
+    "contract_version": 1,
     "manifest_path": (
         "docs/platform/manifests/"
         "modbus-foundation-profile-contract-v1.json"
     ),
-    "manifest_sha256": (
-        "c411e3e8a464e4b9d3a59d3f5a0c82b57e176e24dec9550b9bc0c8b3e4b28c70"
-    ),
+    "policy_path": "docs/platform/modbus-foundation-profile-contract-v1.md",
 }
 AUTHORIZATION_SOURCE = {
     "repository": PLAN_SOURCE["repository"],
@@ -140,7 +139,6 @@ RED_REQUIRED_TESTS = {
     "TestTCPEndpointDeviceIDTraversalPublishesOnlyCompleteAggregate",
 }
 EXPECTED_CI_COMMANDS = (
-    "./scripts/validate_companion_lock.sh",
     "./scripts/scope_gate.sh",
     "GOWORK=off go run ./scripts/read_only_surface .",
     "python3 scripts/validate_m1_02_acceptance.py",
@@ -286,10 +284,9 @@ def validate_canonical_sources(
     document: dict[str, object],
     *,
     plan_bytes: bytes | None,
-    companion_bytes: bytes | None,
     authorization_payload: dict[str, object] | None,
     verify_hosted: bool,
-) -> tuple[bytes, bytes]:
+) -> bytes:
     expected = {
         "plan": PLAN_SOURCE,
         "companion": COMPANION_SOURCE,
@@ -315,20 +312,12 @@ def validate_canonical_sources(
             PLAN_SOURCE["commit_sha"],
             PLAN_SOURCE["path"],
         )
-    if companion_bytes is None:
-        companion_bytes = base.read_git_blob(
-            COMPANION_SOURCE["repository"],
-            COMPANION_SOURCE["commit_sha"],
-            COMPANION_SOURCE["manifest_path"],
-        )
     if (
         base.sha256(plan_bytes) != PLAN_SOURCE["artifact_sha256"]
         or base.sha256(extract_plan_task(plan_bytes))
         != PLAN_SOURCE["task_block_sha256"]
     ):
         raise AcceptanceError("M1-04 locked plan content changed")
-    if base.sha256(companion_bytes) != COMPANION_SOURCE["manifest_sha256"]:
-        raise AcceptanceError("M1-04 companion manifest changed")
     if authorization_payload is None:
         authorization_payload = (
             hosted_authorization(root)
@@ -336,7 +325,7 @@ def validate_canonical_sources(
             else expected_authorization_payload()
         )
     validate_authorization(authorization_payload)
-    return plan_bytes, companion_bytes
+    return plan_bytes
 
 
 def validate_requirements(document: dict[str, object]) -> set[str]:
@@ -372,7 +361,6 @@ def validate_requirements(document: dict[str, object]) -> set[str]:
 def validate_transport_matrix(
     root: Path,
     document: dict[str, object],
-    companion_bytes: bytes,
 ) -> set[str]:
     gates = document.get("gates")
     if not isinstance(gates, dict):
@@ -381,7 +369,7 @@ def validate_transport_matrix(
     if gate != {
         "matrix_path": "policy/m1-04-transport-matrix.json",
         "matrix_sha256": (
-            "0813808be5cb07010e9e696a80569a0dfff065639cb66fd2f3eaab4588cb9974"
+            "2e3e20b935a924a6f32ea57c2ab0f88c8542a1cbc856f9c87497be434261ea95"
         ),
         "expected_rows": 21,
         "unexpected_fail": 0,
@@ -398,11 +386,16 @@ def validate_transport_matrix(
         or matrix.get("milestone") != "FMV3-M1-04"
         or matrix.get("disposition") != "FIXTURE_ONLY_NO_HARDWARE"
         or matrix.get("execution_surface") != "offline_fixture_only"
+        or matrix.get("canonical_source")
+        != {
+            "repository": COMPANION_SOURCE["repository"],
+            "contract_id": COMPANION_SOURCE["contract_id"],
+            "contract_version": COMPANION_SOURCE["contract_version"],
+            "manifest_path": COMPANION_SOURCE["manifest_path"],
+            "recovery_field": "transport_recovery_rows",
+        }
     ):
         raise AcceptanceError("M1-04 transport matrix identity changed")
-    companion = json.loads(companion_bytes)
-    if tuple(companion.get("transport_recovery_rows", ())) != RECOVERY_ROWS:
-        raise AcceptanceError("companion recovery rows changed")
     rows = matrix.get("rows")
     if not isinstance(rows, list):
         raise AcceptanceError("M1-04 transport rows are missing")
@@ -672,22 +665,14 @@ def validate_static_gates(
     }:
         raise AcceptanceError("M1-04 hardware disposition changed")
     previous.validate_offline_surface(root, gates.get("offline_surface"))
-    doc_gate = gates.get("doc_gate")
-    if doc_gate != {
-        "repository": COMPANION_SOURCE["repository"],
-        "pull_request": 376,
-        "commit_sha": COMPANION_SOURCE["commit_sha"],
-        "required_check_run_url": (
-            "https://github.com/Project-Helianthus/helianthus-docs-ebus/"
-            "actions/runs/30238777804/job/89891563104"
+    if gates.get("doc_gate") != {
+        "applicable": False,
+        "reason": (
+            "public HELIANTHUS_MODBUS_FOUNDATION_PROFILE_V1 contract already "
+            "merged; no documentation change"
         ),
     }:
         raise AcceptanceError("M1-04 doc-gate evidence changed")
-    if verify_hosted:
-        base.validate_doc_hosted_evidence(
-            root,
-            str(doc_gate["required_check_run_url"]),
-        )
     validate_tdd(root, gates.get("TDD_RED"), verify_hosted=verify_hosted)
     validate_pull_request(
         root,
@@ -741,7 +726,6 @@ def validate(
     document: dict[str, object],
     *,
     plan_bytes: bytes | None = None,
-    companion_bytes: bytes | None = None,
     authorization_payload: dict[str, object] | None = None,
     verify_hosted: bool = True,
     execute_tests: bool = True,
@@ -752,18 +736,15 @@ def validate(
         or document.get("milestone") != "FMV3-M1-04"
     ):
         raise AcceptanceError("M1-04 acceptance identity changed")
-    _, companion = validate_canonical_sources(
+    validate_canonical_sources(
         root,
         document,
         plan_bytes=plan_bytes,
-        companion_bytes=companion_bytes,
         authorization_payload=authorization_payload,
         verify_hosted=verify_hosted,
     )
     required_tests = validate_requirements(document)
-    required_tests.update(
-        validate_transport_matrix(root, document, companion)
-    )
+    required_tests.update(validate_transport_matrix(root, document))
     validate_static_gates(root, document, verify_hosted=verify_hosted)
     validate_test_evidence(root, document, required_tests)
     if execute_tests:

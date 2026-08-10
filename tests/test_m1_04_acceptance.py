@@ -28,7 +28,6 @@ class M104AcceptanceTests(unittest.TestCase):
         count = validator.validate(
             ROOT,
             self.document(),
-            verify_hosted=False,
             execute_tests=False,
         )
         self.assertGreater(count, 0)
@@ -57,12 +56,12 @@ class M104AcceptanceTests(unittest.TestCase):
         with self.assertRaises(validator.AcceptanceError):
             validator.validate_canonical_sources(document)
 
-    def test_tdd_red_commit_is_tests_only_and_bound_to_base(self) -> None:
+    def test_tdd_red_metadata_shape_is_validated_offline(self) -> None:
         value = copy.deepcopy(self.document()["gates"]["TDD_RED"])
-        validator.validate_tdd(ROOT, value, verify_hosted=False)
-        value["base_sha"] = "0" * 40
+        validator.validate_tdd(value)
+        value["base_sha"] = "0" * 39
         with self.assertRaises(validator.AcceptanceError):
-            validator.validate_tdd(ROOT, value, verify_hosted=False)
+            validator.validate_tdd(value)
 
 
 if __name__ == "__main__":

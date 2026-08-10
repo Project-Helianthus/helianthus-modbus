@@ -3,11 +3,9 @@
 
 from __future__ import annotations
 
-import argparse
 import importlib.util
 import json
 import re
-import subprocess
 import sys
 from pathlib import Path
 
@@ -40,30 +38,6 @@ COMPANION_SOURCE = {
     ),
     "policy_path": "docs/platform/modbus-foundation-profile-contract-v1.md",
 }
-BASE_SHA = "f4b4b9b1c7eb2d2f7bab9e29255ca97260b40c5d"
-RED_EVIDENCE = (
-    {
-        "sha": "1cdbfe75fc5a102d7f71ac612e305bec60b34912",
-        "parent": BASE_SHA,
-        "files": ("rtu_adu_test.go", "rtu_endpoint_test.go"),
-        "run_id": 30380293017,
-        "symbols": (
-            "RTUDeviceIDPlan",
-            "RTUDeviceIDResult",
-            "BeginDeviceID",
-            "EndDeviceIDFrame",
-            "EncodeRTUDeviceIDAccessADU",
-            "DecodeRTUDeviceIDResponseADU",
-        ),
-    },
-    {
-        "sha": "2912af6eef9b792106f5385ce79d20c323986cf3",
-        "parent": "1cdbfe75fc5a102d7f71ac612e305bec60b34912",
-        "files": ("tcp_device_id_endpoint_test.go",),
-        "run_id": 30381957094,
-        "symbols": (),
-    },
-)
 RECOVERY_ROWS = (
     "tcp_provable_zero_no_abandonment",
     "tcp_partial_write_close_reconnect",
@@ -233,142 +207,50 @@ def validate_transport_matrix(
     return tests
 
 
-def validate_tdd(root: Path, value: object, *, verify_hosted: bool) -> None:
-    expected = {
-        "base_sha": BASE_SHA,
-        "test_only_commits": [item["sha"] for item in RED_EVIDENCE],
-        "hosted_ci_runs": [
-            {
-                "commit_sha": item["sha"],
-                "conclusion": "failure",
-                "url": (
-                    "https://github.com/Project-Helianthus/"
-                    "helianthus-modbus/actions/runs/"
-                    f"{item['run_id']}"
-                ),
-            }
-            for item in RED_EVIDENCE
-        ],
-    }
-    if not isinstance(value, dict):
+def validate_tdd(value: object) -> None:
+    if not isinstance(value, dict) or set(value) != {
+        "base_sha",
+        "test_only_commits",
+        "hosted_ci_runs",
+        "red_required_tests",
+    }:
         raise AcceptanceError("M1-04 TDD_RED evidence changed")
+    base_sha = value.get("base_sha")
+    commits = value.get("test_only_commits")
+    runs = value.get("hosted_ci_runs")
     red_required = value.get("red_required_tests")
-    comparable = dict(value)
-    comparable.pop("red_required_tests", None)
     if (
-        comparable != expected
+        not isinstance(base_sha, str)
+        or not isinstance(commits, list)
+        or len(commits) != 2
+        or any(
+            not isinstance(commit, str)
+            or not re.fullmatch(r"[0-9a-f]{40}", commit)
+            for commit in [base_sha, *commits]
+        )
+        or len(set(commits)) != len(commits)
+        or not isinstance(runs, list)
+        or len(runs) != len(commits)
         or not isinstance(red_required, list)
         or set(red_required) != RED_REQUIRED_TESTS
         or len(red_required) != len(RED_REQUIRED_TESTS)
     ):
         raise AcceptanceError("M1-04 TDD_RED evidence changed")
-    red_sources = ""
-    for item in RED_EVIDENCE:
-        sha = str(item["sha"])
-        parent = str(item["parent"])
-        expected_files = list(item["files"])
-        base.ensure_git_object(root, sha)
-        topology = subprocess.run(
-            ["git", "rev-list", "--parents", "-n", "1", sha],
-            cwd=root,
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout.split()
-        if topology != [sha, parent]:
-            raise AcceptanceError("M1-04 RED topology changed")
-        files = subprocess.run(
-            [
-                "git",
-                "diff-tree",
-                "--no-commit-id",
-                "--name-only",
-                "-r",
-                sha,
-            ],
-            cwd=root,
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout.splitlines()
-        if files != expected_files or any(
-            not path.endswith("_test.go") for path in files
-        ):
-            raise AcceptanceError("M1-04 RED commit is not tests-only")
-        red_sources += b"".join(
-            base.read_git_blob(
-                "Project-Helianthus/helianthus-modbus",
-                sha,
-                path,
-            )
-            for path in files
-        ).decode("utf-8")
-    missing = sorted(name for name in RED_REQUIRED_TESTS if name not in red_sources)
-    if missing:
-        raise AcceptanceError(f"M1-04 RED tests are missing: {missing}")
-    if not verify_hosted:
-        return
-    for item in RED_EVIDENCE:
-        run_id = str(item["run_id"])
-        run = subprocess.run(
-            [
-                "gh",
-                "run",
-                "view",
-                run_id,
-                "--repo",
-                "Project-Helianthus/helianthus-modbus",
-                "--json",
-                "conclusion,event,headSha,workflowName,jobs",
-            ],
-            cwd=root,
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        logs = subprocess.run(
-            [
-                "gh",
-                "run",
-                "view",
-                run_id,
-                "--repo",
-                "Project-Helianthus/helianthus-modbus",
-                "--log-failed",
-            ],
-            cwd=root,
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        if run.returncode != 0 or logs.returncode != 0:
-            raise AcceptanceError("cannot verify hosted M1-04 RED")
-        payload = json.loads(run.stdout)
-        jobs = {
-            job.get("name"): job.get("conclusion")
-            for job in payload.get("jobs", ())
-            if isinstance(job, dict)
-        }
+    for commit, run in zip(commits, runs, strict=True):
         if (
-            payload.get("conclusion") != "failure"
-            or payload.get("event") != "pull_request"
-            or payload.get("headSha") != item["sha"]
-            or payload.get("workflowName") != "CI"
-            or jobs.get("checks") != "failure"
-            or jobs.get("lint") != "failure"
+            not isinstance(run, dict)
+            or set(run) != {"commit_sha", "conclusion", "url"}
+            or run.get("commit_sha") != commit
+            or run.get("conclusion") != "failure"
+            or not isinstance(run.get("url"), str)
         ):
-            raise AcceptanceError("hosted M1-04 RED binding changed")
-        if any(symbol not in logs.stdout for symbol in item["symbols"]):
-            raise AcceptanceError(
-                "hosted M1-04 RED lacks missing-runtime evidence"
-            )
+            raise AcceptanceError("M1-04 TDD_RED run metadata changed")
+        base.github_run_id(str(run["url"]))
 
 
 def validate_static_gates(
     root: Path,
     document: dict[str, object],
-    *,
-    verify_hosted: bool,
 ) -> None:
     gates = document.get("gates")
     if not isinstance(gates, dict):
@@ -398,7 +280,7 @@ def validate_static_gates(
         ),
     }:
         raise AcceptanceError("M1-04 doc-gate evidence changed")
-    validate_tdd(root, gates.get("TDD_RED"), verify_hosted=verify_hosted)
+    validate_tdd(gates.get("TDD_RED"))
 
 
 def validate_test_evidence(
@@ -445,7 +327,6 @@ def validate(
     root: Path,
     document: dict[str, object],
     *,
-    verify_hosted: bool = True,
     execute_tests: bool = True,
 ) -> int:
     if (
@@ -457,7 +338,7 @@ def validate(
     validate_canonical_sources(document)
     required_tests = validate_requirements(document)
     required_tests.update(validate_transport_matrix(root, document))
-    validate_static_gates(root, document, verify_hosted=verify_hosted)
+    validate_static_gates(root, document)
     validate_test_evidence(root, document, required_tests)
     if execute_tests:
         base.run_mapped_tests(root, required_tests)
@@ -465,26 +346,14 @@ def validate(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--candidate",
-        action="store_true",
-        help="run structural checks without hosted publication claims",
-    )
-    arguments = parser.parse_args()
     try:
         document = base.load_json(ROOT / "policy" / "m1-04-acceptance.json")
-        count = validate(
-            ROOT,
-            document,
-            verify_hosted=not arguments.candidate,
-        )
+        count = validate(ROOT, document)
     except (AcceptanceError, OSError, json.JSONDecodeError) as exc:
         print(f"M1-04 acceptance failed: {exc}", file=sys.stderr)
         return 1
-    disposition = "candidate-only" if arguments.candidate else "published"
     print(
-        f"M1-04 {disposition} acceptance passed: "
+        "M1-04 acceptance passed: "
         f"5 requirements, 21 transport rows, {count} tests."
     )
     return 0

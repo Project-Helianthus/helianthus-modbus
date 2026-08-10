@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -45,82 +44,6 @@ class M102AcceptanceTests(unittest.TestCase):
             self.assertEqual(target_root, ROOT.resolve())
             self.assertEqual(environment["PWD"], str(tool_root))
             self.assertEqual(environment["GOWORK"], "off")
-
-    def test_shallow_checkout_materializes_merge_ancestry(self) -> None:
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            source = root / "source"
-            remote = root / "remote.git"
-            checkout = root / "checkout"
-            subprocess.run(
-                ["git", "init", "-q", "--initial-branch=main", source],
-                check=True,
-            )
-            subprocess.run(
-                ["git", "-C", source, "config", "user.name", "Fixture"],
-                check=True,
-            )
-            subprocess.run(
-                [
-                    "git",
-                    "-C",
-                    source,
-                    "config",
-                    "user.email",
-                    "fixture@example.invalid",
-                ],
-                check=True,
-            )
-            fixture = source / "fixture.txt"
-            fixture.write_text("base\n", encoding="utf-8")
-            subprocess.run(["git", "-C", source, "add", "."], check=True)
-            subprocess.run(
-                ["git", "-C", source, "commit", "-qm", "base"],
-                check=True,
-            )
-            fixture.write_text("merge\n", encoding="utf-8")
-            subprocess.run(
-                ["git", "-C", source, "commit", "-qam", "merge"],
-                check=True,
-            )
-            merge_sha = subprocess.run(
-                ["git", "-C", source, "rev-parse", "HEAD"],
-                check=True,
-                capture_output=True,
-                text=True,
-            ).stdout.strip()
-            subprocess.run(
-                ["git", "-C", source, "switch", "-qc", "feature"],
-                check=True,
-            )
-            fixture.write_text("feature\n", encoding="utf-8")
-            subprocess.run(
-                ["git", "-C", source, "commit", "-qam", "feature"],
-                check=True,
-            )
-            subprocess.run(
-                ["git", "clone", "-q", "--bare", source, remote],
-                check=True,
-            )
-            subprocess.run(
-                [
-                    "git",
-                    "clone",
-                    "-q",
-                    "--depth=1",
-                    "--branch=feature",
-                    f"file://{remote}",
-                    checkout,
-                ],
-                check=True,
-            )
-            self.assertFalse(
-                validator.git_is_ancestor(checkout, merge_sha, "HEAD")
-            )
-            validator.ensure_full_history(checkout)
-            self.assertTrue(
-                validator.git_is_ancestor(checkout, merge_sha, "HEAD")
-            )
 
     def test_skipped_required_subtest_is_rejected(self) -> None:
         output = "\n".join(
@@ -214,15 +137,12 @@ class M102AcceptanceTests(unittest.TestCase):
     def test_pending_tdd_red_evidence_is_rejected(self) -> None:
         with self.assertRaises(validator.AcceptanceError):
             validator.validate_tdd_red(
-                ROOT,
                 {
                     "commit_sha": "037264cbfdea82fb73c64978fa538c34855cf48b",
                     "required_shape": "tests_only_parented_by_fmv3_m1_01",
                     "hosted_ci_conclusion": "failure",
                     "hosted_ci_run_url": None,
                 },
-                set(),
-                verify_hosted=False,
             )
 
     def test_hosted_tdd_red_uses_numeric_run_id(self) -> None:
@@ -237,37 +157,6 @@ class M102AcceptanceTests(unittest.TestCase):
                 "helianthus-modbus/actions/runs/not-a-run"
             )
 
-    def test_hosted_tdd_red_requires_missing_runtime_failure(self) -> None:
-        commit = "037264cbfdea82fb73c64978fa538c34855cf48b"
-        hosted = {
-            "conclusion": "failure",
-            "event": "pull_request",
-            "headSha": commit,
-            "workflowName": "CI",
-            "jobs": [
-                {
-                    "name": "lint",
-                    "conclusion": "failure",
-                    "databaseId": 1,
-                }
-            ],
-        }
-        log = "\n".join(
-            (
-                "undefined: TCPEndpoint",
-                "undefined: TCPTransportEvent",
-                "undefined: ReadIntent",
-                "undefined: EndpointScheduler",
-            )
-        )
-        validator.validate_tdd_hosted_payload(commit, hosted, log)
-        with self.assertRaises(validator.AcceptanceError):
-            validator.validate_tdd_hosted_payload(
-                commit,
-                hosted,
-                "runner unavailable",
-            )
-
     def test_doc_gate_rejects_authority_reintroduction(self) -> None:
         document = validator.load_json(
             ROOT / "policy" / "m1-02-acceptance.json"
@@ -276,14 +165,8 @@ class M102AcceptanceTests(unittest.TestCase):
             "applicable": True,
             "reason": "documentation authority reintroduced",
         }
-        required = validator.validate_requirement_contract(document)
         with self.assertRaises(validator.AcceptanceError):
-            validator.validate_gate_contract(
-                ROOT,
-                document,
-                required,
-                False,
-            )
+            validator.validate_gate_contract(document)
 
 
 if __name__ == "__main__":

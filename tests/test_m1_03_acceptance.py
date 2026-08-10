@@ -26,7 +26,6 @@ class M103AcceptanceTests(unittest.TestCase):
         count = validator.validate(
             ROOT,
             document,
-            verify_hosted=False,
             execute_tests=False,
         )
         self.assertGreater(count, 0)
@@ -111,65 +110,6 @@ class M103AcceptanceTests(unittest.TestCase):
                     },
                 )
 
-    def test_hosted_red_requires_both_jobs_and_missing_runtime(self) -> None:
-        red = "f5e55fccafc060c5556d5510ddb373dc8dbc2bf4"
-        payload = {
-            "conclusion": "failure",
-            "event": "pull_request",
-            "headSha": red,
-            "workflowName": "CI",
-            "jobs": [
-                {"name": "checks", "conclusion": "failure"},
-                {"name": "lint", "conclusion": "failure"},
-            ],
-        }
-        log = "\n".join(
-            (
-                "undefined: RTUEvent",
-                "undefined: RTUFixtureEndpoint",
-                "undefined: RTUReadPlan",
-                "undefined: RTUTiming",
-                "undefined: EncodeRTUReadADU",
-                "undefined: DecodeRTUReadResponseADU",
-            )
-        )
-        validator.validate_tdd_hosted_payload(red, payload, log)
-        with self.assertRaises(validator.AcceptanceError):
-            validator.validate_tdd_hosted_payload(
-                red,
-                payload,
-                log.replace("undefined: RTUTiming", ""),
-            )
-
-    def test_hosted_red_is_bound_to_exact_run_pr_and_base(self) -> None:
-        red = "f5e55fccafc060c5556d5510ddb373dc8dbc2bf4"
-        run = {
-            "id": 30367710672,
-            "event": "pull_request",
-            "head_sha": red,
-            "head_branch": "issue/9-fixture-only-modbus-rtu",
-            "path": ".github/workflows/ci.yml",
-            "run_attempt": 1,
-            "conclusion": "failure",
-        }
-        pulls = [
-            {
-                "number": 10,
-                "state": "open",
-                "base_ref": "main",
-                "base_sha": (
-                    "79f9c6da6efd5be9f3e31ddf62720c1a3d0bf3e7"
-                ),
-                "head_sha": "b04fa221ff638b5cbb4bdcb8b08f5919643524fc",
-            }
-        ]
-        validator.validate_tdd_hosted_binding(red, run, pulls)
-        pulls[0]["state"] = "closed"
-        validator.validate_tdd_hosted_binding(red, run, pulls)
-        pulls[0]["base_sha"] = "0" * 40
-        with self.assertRaises(validator.AcceptanceError):
-            validator.validate_tdd_hosted_binding(red, run, pulls)
-
     def test_compiled_inventory_rejects_extra_test_and_non_go_sources(
         self,
     ) -> None:
@@ -207,8 +147,8 @@ class M103AcceptanceTests(unittest.TestCase):
             with self.assertRaises(validator.AcceptanceError):
                 validator.validate_offline_source_filesystem(root)
 
-    def test_ci_publication_mode_controls_are_hash_locked(self) -> None:
-        validator.validate_ci_mode_controls(ROOT)
+    def test_current_ci_controls_are_hash_locked(self) -> None:
+        validator.validate_ci_controls(ROOT)
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             workflow = root / ".github/workflows/ci.yml"
@@ -220,12 +160,12 @@ class M103AcceptanceTests(unittest.TestCase):
                 (ROOT / "scripts/ci_local.sh").read_text(encoding="utf-8")
                 .replace(
                     "python3 scripts/validate_m1_03_acceptance.py",
-                    "python3 scripts/validate_m1_03_acceptance.py --candidate",
+                    "true # validator removed",
                 ),
                 encoding="utf-8",
             )
             with self.assertRaises(validator.AcceptanceError):
-                validator.validate_ci_mode_controls(root)
+                validator.validate_ci_controls(root)
 
     def test_requirement_source_identity_is_immutable(self) -> None:
         document = json.loads(

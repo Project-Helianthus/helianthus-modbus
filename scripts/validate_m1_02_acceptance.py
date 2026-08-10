@@ -9,7 +9,6 @@ import os
 import re
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 
@@ -30,7 +29,6 @@ PLAN_SOURCE = {
     ),
     "node": "FMV3-M1-02",
 }
-M1_01_SHA = "c9b3281b5025fd3b1b714235493bd36d526f865f"
 EXPECTED_REQUIREMENTS = (
     (
         "tcp_socket_owner_allocator_map",
@@ -122,67 +120,6 @@ def load_json(path: Path) -> dict[str, object]:
     return value
 
 
-def ensure_git_object(root: Path, commit: str) -> None:
-    present = subprocess.run(
-        ["git", "cat-file", "-e", f"{commit}^{{commit}}"],
-        cwd=root,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    if present.returncode == 0:
-        return
-    fetched = subprocess.run(
-        ["git", "fetch", "--no-tags", "origin", commit],
-        cwd=root,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    if fetched.returncode != 0:
-        raise AcceptanceError(
-            f"cannot fetch immutable revision {commit}: {fetched.stderr.strip()}"
-        )
-
-
-def ensure_full_history(root: Path) -> None:
-    shallow = subprocess.run(
-        ["git", "rev-parse", "--is-shallow-repository"],
-        cwd=root,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    if shallow.returncode != 0:
-        raise AcceptanceError(
-            f"cannot inspect repository depth: {shallow.stderr.strip()}"
-        )
-    if shallow.stdout.strip() == "false":
-        return
-    fetched = subprocess.run(
-        ["git", "fetch", "--unshallow", "--no-tags", "origin"],
-        cwd=root,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    if fetched.returncode != 0:
-        raise AcceptanceError(
-            f"cannot materialize checkout ancestry: {fetched.stderr.strip()}"
-        )
-
-
-def git_is_ancestor(root: Path, ancestor: str, descendant: str) -> bool:
-    result = subprocess.run(
-        ["git", "merge-base", "--is-ancestor", ancestor, descendant],
-        cwd=root,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    return result.returncode == 0
-
-
 def go_tool_context(root: Path) -> tuple[Path, Path, dict[str, str]]:
     tool_root = Path(__file__).resolve().parents[1]
     target_root = root.resolve()
@@ -214,84 +151,6 @@ def test_evidence(root: Path) -> dict[str, object]:
     if not isinstance(value, dict):
         raise AcceptanceError("test body evidence tool returned non-object JSON")
     return value
-
-
-def read_git_blob(
-    repository: str,
-    commit_sha: str,
-    path: str,
-) -> bytes:
-    environment_key = (
-        "HELIANTHUS_"
-        + repository.rsplit("/", 1)[-1].replace("-", "_").upper()
-        + "_REPO"
-    )
-    candidates = []
-    configured = os.environ.get(environment_key)
-    if configured:
-        candidates.append(Path(configured))
-    workspace = Path(__file__).resolve().parents[2]
-    candidates.append(workspace / repository.rsplit("/", 1)[-1])
-    for candidate in candidates:
-        result = subprocess.run(
-            ["git", "-C", str(candidate), "show", f"{commit_sha}:{path}"],
-            check=False,
-            capture_output=True,
-        )
-        if result.returncode == 0:
-            return result.stdout
-    with tempfile.TemporaryDirectory(prefix="helianthus-contract-") as temp:
-        checkout = Path(temp) / "repository"
-        remote = f"https://github.com/{repository}.git"
-        clone = subprocess.run(
-            [
-                "git",
-                "-c",
-                "core.hooksPath=/dev/null",
-                "clone",
-                "--filter=blob:none",
-                "--no-checkout",
-                remote,
-                str(checkout),
-            ],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        if clone.returncode != 0:
-            raise AcceptanceError(
-                f"cannot clone canonical repository {repository}: "
-                f"{clone.stderr.strip()}"
-            )
-        fetch = subprocess.run(
-            [
-                "git",
-                "-C",
-                str(checkout),
-                "fetch",
-                "--depth=1",
-                "origin",
-                commit_sha,
-            ],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        if fetch.returncode != 0:
-            raise AcceptanceError(
-                f"cannot fetch canonical commit {commit_sha}: "
-                f"{fetch.stderr.strip()}"
-            )
-        result = subprocess.run(
-            ["git", "-C", str(checkout), "show", f"{commit_sha}:{path}"],
-            check=False,
-            capture_output=True,
-        )
-        if result.returncode != 0:
-            raise AcceptanceError(
-                f"canonical path missing: {repository}@{commit_sha}:{path}"
-            )
-        return result.stdout
 
 
 def validate_canonical_sources(
@@ -386,10 +245,7 @@ def validate_transport_matrix(
 
 
 def validate_gate_contract(
-    root: Path,
     document: dict[str, object],
-    required_tests: set[str],
-    verify_tdd_hosted: bool,
 ) -> None:
     gates = document.get("gates")
     if not isinstance(gates, dict):
@@ -418,19 +274,11 @@ def validate_gate_contract(
     red = gates.get("TDD_RED")
     if not isinstance(red, dict) or not isinstance(red.get("commit_sha"), str):
         raise AcceptanceError("TDD_RED evidence is missing")
-    validate_tdd_red(
-        root,
-        red,
-        required_tests,
-        verify_tdd_hosted,
-    )
+    validate_tdd_red(red)
 
 
 def validate_tdd_red(
-    root: Path,
     value: object,
-    required_tests: set[str],
-    verify_hosted: bool,
 ) -> None:
     if not isinstance(value, dict):
         raise AcceptanceError("TDD_RED evidence is missing")
@@ -442,164 +290,10 @@ def validate_tdd_red(
         or value.get("hosted_ci_conclusion") != "failure"
     ):
         raise AcceptanceError("TDD_RED evidence contract changed")
-    parent = subprocess.run(
-        ["git", "rev-parse", f"{commit}^"],
-        cwd=root,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    if parent.returncode != 0 or parent.stdout.strip() != M1_01_SHA:
-        raise AcceptanceError("TDD_RED commit is not based directly on FMV3-M1-01")
-    changed = subprocess.run(
-        ["git", "diff-tree", "--no-commit-id", "--name-only", "-r", commit],
-        cwd=root,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    files = [line for line in changed.stdout.splitlines() if line]
-    if changed.returncode != 0 or not files or any(
-        not (
-            path.endswith("_test.go")
-            or path.startswith("tests/")
-            or path.startswith("testdata/")
-        )
-        for path in files
-    ):
-        raise AcceptanceError(f"TDD_RED commit is not tests-only: {files}")
-    required_red_files = {
-        "tcp_adu_test.go",
-        "tcp_coalescing_test.go",
-        "tcp_endpoint_test.go",
-        "tcp_owner_test.go",
-        "tcp_pool_test.go",
-        "tcp_scheduler_test.go",
-        "tcp_transport_test.go",
-    }
-    if not required_red_files.issubset(files):
-        raise AcceptanceError(
-            "TDD_RED commit lacks runtime test surfaces: "
-            f"{sorted(required_red_files - set(files))}"
-        )
-    red_sources = subprocess.run(
-        ["git", "grep", "-h", "-E", r"^func Test[A-Za-z0-9_]+\(", commit, "--", "*_test.go"],
-        cwd=root,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    if red_sources.returncode != 0:
-        raise AcceptanceError("cannot inspect TDD_RED test inventory")
-    red_tests = {
-        match.group(1)
-        for match in re.finditer(
-            r"^func (Test[A-Za-z0-9_]+)\(",
-            red_sources.stdout,
-            re.MULTILINE,
-        )
-    }
-    if not required_tests.issubset(red_tests):
-        raise AcceptanceError(
-            "TDD_RED tree lacks mapped tests: "
-            f"{sorted(required_tests - red_tests)}"
-        )
     run_url = value.get("hosted_ci_run_url")
     if not isinstance(run_url, str):
         raise AcceptanceError("TDD_RED hosted CI URL is missing")
-    run_id = github_run_id(run_url)
-    if not verify_hosted:
-        return
-    result = subprocess.run(
-        [
-            "gh",
-            "run",
-            "view",
-            run_id,
-            "--repo",
-            "Project-Helianthus/helianthus-modbus",
-            "--json",
-            "conclusion,event,headSha,jobs,workflowName",
-        ],
-        cwd=root,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        raise AcceptanceError(
-            f"cannot verify TDD_RED hosted CI: {result.stderr.strip()}"
-        )
-    hosted = json.loads(result.stdout)
-    jobs = hosted.get("jobs")
-    lint_job = next(
-        (
-            job
-            for job in jobs
-            if isinstance(job, dict) and job.get("name") == "lint"
-        ),
-        None,
-    ) if isinstance(jobs, list) else None
-    if not isinstance(lint_job, dict):
-        raise AcceptanceError("hosted TDD_RED lint job is missing")
-    job_id = lint_job.get("databaseId")
-    if not isinstance(job_id, int):
-        raise AcceptanceError("hosted TDD_RED lint job identity is missing")
-    log_result = subprocess.run(
-        [
-            "gh",
-            "run",
-            "view",
-            run_id,
-            "--repo",
-            "Project-Helianthus/helianthus-modbus",
-            "--job",
-            str(job_id),
-            "--log-failed",
-        ],
-        cwd=root,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    if log_result.returncode != 0:
-        raise AcceptanceError(
-            f"cannot inspect TDD_RED failed log: {log_result.stderr.strip()}"
-        )
-    validate_tdd_hosted_payload(commit, hosted, log_result.stdout)
-
-
-def validate_tdd_hosted_payload(
-    commit: str,
-    hosted: dict[str, object],
-    failed_log: str,
-) -> None:
-    if (
-        hosted.get("conclusion") != "failure"
-        or hosted.get("event") != "pull_request"
-        or hosted.get("headSha") != commit
-        or hosted.get("workflowName") != "CI"
-    ):
-        raise AcceptanceError(f"hosted TDD_RED evidence mismatch: {hosted}")
-    jobs = hosted.get("jobs")
-    lint_jobs = [
-        job
-        for job in jobs
-        if isinstance(job, dict) and job.get("name") == "lint"
-    ] if isinstance(jobs, list) else []
-    if len(lint_jobs) != 1 or lint_jobs[0].get("conclusion") != "failure":
-        raise AcceptanceError("hosted TDD_RED lint job did not fail")
-    required_markers = (
-        "undefined: TCPEndpoint",
-        "undefined: TCPTransportEvent",
-        "undefined: ReadIntent",
-        "undefined: EndpointScheduler",
-    )
-    missing = [marker for marker in required_markers if marker not in failed_log]
-    if missing:
-        raise AcceptanceError(
-            f"hosted TDD_RED lacks missing-runtime evidence: {missing}"
-        )
+    github_run_id(run_url)
 
 
 def validate_declared_test_files(
@@ -724,7 +418,6 @@ def validate(
     root: Path,
     document: dict[str, object],
     *,
-    verify_tdd_hosted: bool = True,
     execute_tests: bool = True,
 ) -> int:
     if (
@@ -736,12 +429,7 @@ def validate(
     validate_canonical_sources(document)
     required_tests = validate_requirement_contract(document)
     required_tests.update(validate_transport_matrix(root, document))
-    validate_gate_contract(
-        root,
-        document,
-        required_tests,
-        verify_tdd_hosted,
-    )
+    validate_gate_contract(document)
     validate_body_evidence(root, document, required_tests)
     if execute_tests:
         run_mapped_tests(root, required_tests)

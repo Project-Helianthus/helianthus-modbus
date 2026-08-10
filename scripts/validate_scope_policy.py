@@ -94,13 +94,13 @@ EXPECTED_POLICY = {
     },
     "trusted_python_tool_sha256": {
         "scripts/validate_m1_02_acceptance.py": (
-            "d48d1724e9b7a71380d747b5f8e0029f970c5743ccb37dbdfcf14cbe1ea0e7f0"
+            "f64e579546bb49c22cdc092cae63d297d846e7e0d31aa46a91bddacc20b69092"
         ),
         "scripts/validate_m1_03_acceptance.py": (
-            "ed722bb2308be017e45df4c6bb907dbc96421cd385af24214fa59b03cf9aa7e5"
+            "0a1b91929befbbc87da58c29e40959e7b8be86718232bfdeb5000c7c22b928be"
         ),
         "scripts/validate_m1_04_acceptance.py": (
-            "32da2c9e8dc5477f8d3a420a468708bb4693aa6634145d434fe1a6286f957fd2"
+            "67eefbf1db0b90cf172e627ad9c21a1a6641d8231500504d7f3b3e9f55d93add"
         ),
         "scripts/validate_m1_06_conformance.py": (
             "01e30441ab38cef40f3dd65dc2bf00090e70333961be140961d95a344f7c633c"

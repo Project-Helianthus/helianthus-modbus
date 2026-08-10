@@ -160,6 +160,9 @@ the `m1_protocol` policy lock. Tests may expand without weakening that product
 inventory, but still pass the same dependency, vendor-token, and read-only
 gates. CI validates structural companion identities, acceptance mappings, and
 their behavioral evidence without treating documentation hashes as authority.
+Historical RED SHAs and run URLs are passive metadata: M1-02 through M1-04
+validators are deterministic current-tree checks and do not fetch Git history
+or query GitHub.
 FMV3-M1-06 proves `OPAQUE_RUNTIME_ACQUISITION_V1`
 through the source-owned API and executable behavioral inventory without
 treating a documentation digest as runtime authority. Its RED evidence,

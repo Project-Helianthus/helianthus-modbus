@@ -47,18 +47,10 @@ echo "==> FMV3-M1-02 acceptance map"
 python3 scripts/validate_m1_02_acceptance.py
 
 echo "==> FMV3-M1-03 offline RTU acceptance map"
-if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
-  python3 scripts/validate_m1_03_acceptance.py
-else
-  python3 scripts/validate_m1_03_acceptance.py --candidate
-fi
+python3 scripts/validate_m1_03_acceptance.py
 
 echo "==> FMV3-M1-04 transport conformance matrix"
-if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
-  python3 scripts/validate_m1_04_acceptance.py
-else
-  python3 scripts/validate_m1_04_acceptance.py --candidate
-fi
+python3 scripts/validate_m1_04_acceptance.py
 
 echo "==> FMV3-M1-06 opaque runtime acquisition conformance"
 python3 scripts/validate_m1_06_conformance.py

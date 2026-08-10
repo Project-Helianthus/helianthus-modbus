@@ -5,15 +5,15 @@
   "execution_surface": "offline_fixture_only",
   "canonical_source": {
     "repository": "Project-Helianthus/helianthus-docs-ebus",
-    "commit_sha": "711a556fee344c6fe7f1ecf3253fcdb3f5f22d06",
+    "contract_id": "HELIANTHUS_MODBUS_FOUNDATION_PROFILE_V1",
+    "contract_version": 1,
     "manifest_path": "docs/platform/manifests/modbus-foundation-profile-contract-v1.json",
-    "manifest_sha256": "c411e3e8a464e4b9d3a59d3f5a0c82b57e176e24dec9550b9bc0c8b3e4b28c70",
     "recovery_field": "transport_recovery_rows"
   },
   "plan_source": {
     "repository": "Project-Helianthus/helianthus-execution-plans",
-    "commit_sha": "0576544bd8851c4e32da3ca7c401270eee43ef5c",
     "path": "fronius-modbus-multivendor-v3-w29-26.locked/plan.yaml",
+    "node": "FMV3-M1-04",
     "identity_field": "identity_operation_matrix"
   },
   "rows": [

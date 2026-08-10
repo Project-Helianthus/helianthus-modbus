@@ -1,0 +1,129 @@
+{
+  "schema": "helianthus.modbus.runtime-acquisition-conformance/v1",
+  "milestone": "FMV3-M1-06",
+  "references": {
+    "execution_guide": {
+      "repository": "Project-Helianthus/helianthus-execution-plans",
+      "path": "fronius-modbus-multivendor-v3-w29-26.implementing/plan.yaml",
+      "node": "FMV3-M1-06"
+    },
+    "public_contract": {
+      "repository": "Project-Helianthus/helianthus-docs-ebus",
+      "contract_id": "OPAQUE_RUNTIME_ACQUISITION_V1",
+      "contract_version": 1,
+      "policy_path": "docs/platform/opaque-runtime-acquisition-v1.md",
+      "manifest_path": "docs/platform/manifests/opaque-runtime-acquisition-v1.json"
+    }
+  },
+  "requirements": [
+    {
+      "id": "runtime_only_lossless_issuance",
+      "tests": [
+        "TestM106RuntimeOnlyIssuanceAndLosslessProvenance",
+        "TestM106NonSuccessfulOutcomesNeverIssueCapabilities"
+      ]
+    },
+    {
+      "id": "coalesced_independence_copy_shared_claim",
+      "tests": [
+        "TestM106CoalescedCapabilitiesAreIndependentAndCopiesShareOneClaim",
+        "TestM106ConcurrentRegistrationUsesDeclaredOrdinals"
+      ]
+    },
+    {
+      "id": "membership_close_late_registration",
+      "tests": [
+        "TestM106MembershipCloseRejectsLateRegistration"
+      ]
+    },
+    {
+      "id": "exact_instance_cancel_open_drain",
+      "tests": [
+        "TestM106CancelOpenUsesExactInstanceAndDrainsMembers",
+        "TestM106CancelOpenAcceptsDrainedExactTerminalInstance",
+        "TestM106CancelOpenDrainedInstanceLinearizesOnceAndStaysExact"
+      ]
+    },
+    {
+      "id": "bounded_sequences_reclamation_restart",
+      "tests": [
+        "TestM106BoundsExhaustionAndDeterministicTombstones",
+        "TestM106RestartExportRetiresSourceAndPreservesSequenceUniqueness",
+        "TestM106FailureAndExpiryReclaimSynchronously"
+      ]
+    },
+    {
+      "id": "opaque_private_state",
+      "tests": [
+        "TestM106PrivateCapabilityStateIsNotSerializableOrReconstructable"
+      ]
+    },
+    {
+      "id": "bounded_normalization_activation",
+      "tests": [
+        "TestM106NormalizationAndActivationBoundsFailClosed",
+        "TestM106NormalizationExactSerializationBoundary",
+        "TestM106NormalizationRequiredFieldsRejectNullAndWrongTypes",
+        "TestM106NormalizationParseLinearizesWithRestartExport"
+      ]
+    }
+  ],
+  "gates": {
+    "TDD_RED": {
+      "base_sha": "4f81cbeb6321e64fa51676ed6e375ce36b60d16d",
+      "test_only_commit_sha": "9d1235f9e5685e6b8b35c54b86d1d6e9d8365d49",
+      "test_file": "runtime_acquisition_test.go",
+      "hosted_ci": {
+        "run_id": 31257996397,
+        "run_url": "https://github.com/Project-Helianthus/helianthus-modbus/actions/runs/31257996397",
+        "checks_job_id": 93104267178,
+        "lint_job_id": 93104267185,
+        "conclusion": "failure",
+        "reason": "typecheck_failed_on_absent_runtime_acquisition_api"
+      }
+    },
+    "pull_request": {
+      "repository": "Project-Helianthus/helianthus-modbus",
+      "number": 16,
+      "base": "main",
+      "base_sha": "4f81cbeb6321e64fa51676ed6e375ce36b60d16d"
+    },
+    "CI": {
+      "commands": [
+        "./scripts/scope_gate.sh",
+        "GOWORK=off go run ./scripts/read_only_surface .",
+        "python3 scripts/validate_m1_02_acceptance.py",
+        "python3 scripts/validate_m1_03_acceptance.py",
+        "python3 scripts/validate_m1_04_acceptance.py",
+        "python3 scripts/validate_m1_06_conformance.py",
+        "python3 -m unittest discover -s tests -p 'test_*.py'",
+        "GOWORK=off go vet ./...",
+        "GOWORK=off go build ./...",
+        "GOWORK=off GOOS=linux GOARCH=386 go test -c -o /dev/null .",
+        "GOWORK=off go test -race -count=1 ./...",
+        "GOWORK=off golangci-lint run ./..."
+      ]
+    },
+    "doc_gate": {
+      "applicable": false,
+      "reason": "public OPAQUE_RUNTIME_ACQUISITION_V1 contract already merged; no documentation change"
+    },
+    "transport_gate": {
+      "applicable": true,
+      "reason": "successful TCP logical-view production carries source issuance authority",
+      "matrix_path": "policy/m1-04-transport-matrix.json",
+      "unexpected_fail": 0,
+      "unexpected_pass": 0
+    }
+  },
+  "scope_stop": {
+    "gateway": false,
+    "vendor_profile": false,
+    "detector": false,
+    "live_device": false,
+    "write": false,
+    "private_binding": false,
+    "canonical_semantics": false,
+    "smoke_test_required": false
+  }
+}

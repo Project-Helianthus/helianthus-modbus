@@ -15,15 +15,16 @@ import (
 
 // TCPEndpointConfig declares every bounded resource owned by one endpoint.
 type TCPEndpointConfig struct {
-	Endpoint            string
-	PoolLimits          EndpointPoolLimits
-	SchedulerLimits     SchedulerLimits
-	Backoff             BackoffConfig
-	MaxBufferedBytes    int
-	MaxRequestDeadline  time.Duration
-	MaxResponseDeadline time.Duration
-	Clock               TCPMonotonicClock
-	EventSink           TCPTransportEventSink
+	Endpoint                 string
+	PoolLimits               EndpointPoolLimits
+	SchedulerLimits          SchedulerLimits
+	Backoff                  BackoffConfig
+	MaxBufferedBytes         int
+	MaxRequestDeadline       time.Duration
+	MaxResponseDeadline      time.Duration
+	Clock                    TCPMonotonicClock
+	EventSink                TCPTransportEventSink
+	RuntimeAcquisitionSource *RuntimeAcquisitionSource
 }
 
 // TCPLogicalRead is one logical FC03/FC04 view in a physical read plan.
@@ -925,6 +926,7 @@ func (endpoint *TCPEndpoint) EnqueueRead(
 		endpoint.afterSchedule()
 	}
 	group.setOperationDeadline(deadline)
+	group.setRuntimeAcquisitionSource(endpoint.config.RuntimeAcquisitionSource)
 	endpoint.mu.Lock()
 	if endpoint.closed {
 		endpoint.mu.Unlock()
@@ -2846,6 +2848,7 @@ func (endpoint *TCPEndpoint) Retry(
 	}
 	if group != nil {
 		group.setOperationDeadline(effectiveDeadline)
+		group.setRuntimeAcquisitionSource(endpoint.config.RuntimeAcquisitionSource)
 	}
 	endpoint.mu.Lock()
 	handle.backoff.mu.Lock()

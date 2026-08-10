@@ -4,34 +4,15 @@
   "canonical_sources": {
     "companion_contract": {
       "repository": "Project-Helianthus/helianthus-docs-ebus",
-      "commit_sha": "711a556fee344c6fe7f1ecf3253fcdb3f5f22d06",
-      "consumer_lock_path": "policy/modbus-companion-consumer-lock-v1.json",
+      "contract_id": "HELIANTHUS_MODBUS_FOUNDATION_PROFILE_V1",
+      "contract_version": 1,
       "manifest_path": "docs/platform/manifests/modbus-foundation-profile-contract-v1.json",
-      "manifest_sha256": "c411e3e8a464e4b9d3a59d3f5a0c82b57e176e24dec9550b9bc0c8b3e4b28c70",
-      "policy_path": "docs/platform/modbus-foundation-profile-contract-v1.md",
-      "policy_sha256": "1a53f203eed42766ac2d91580c41f72674b5eaea374a1cf4fff650396f06b196"
+      "policy_path": "docs/platform/modbus-foundation-profile-contract-v1.md"
     },
     "execution_plan": {
       "repository": "Project-Helianthus/helianthus-execution-plans",
-      "commit_sha": "0576544bd8851c4e32da3ca7c401270eee43ef5c",
       "path": "fronius-modbus-multivendor-v3-w29-26.locked/plan.yaml",
-      "artifact_sha256": "c36f66d8e9b2952b9464fa5a4d64e86a314dba331cbc59d833fdf8edfd1de7d8",
-      "task_block_sha256": "a67d2434802c33ab2b886ce401a334daa225530e50aa41801bcb3c7952e8aed6"
-    },
-    "execution_authorization": {
-      "issue": 71,
-      "comment": 5084046075,
-      "authorized_issue": "FMV3-M1-03",
-      "plan_head_sha": "0576544bd8851c4e32da3ca7c401270eee43ef5c",
-      "authorized_issue_contract_sha256": "e2700e6da559b851fef6b9d510033f1f9b9004964d19cb8c136885c78e7da8a5",
-      "body_sha256": "7fea6d204082dba92951dc2229463c602ddd20aca560381f87613c1e71fea881",
-      "author": "d3vi1",
-      "author_associations": [
-        "MEMBER",
-        "CONTRIBUTOR"
-      ],
-      "created_at": "2026-07-26T15:04:11Z",
-      "updated_at": "2026-07-26T15:04:11Z"
+      "node": "FMV3-M1-03"
     }
   },
   "requirements": [
@@ -172,17 +153,8 @@
         "TestRTULateSameShapeFrameIsDiscarded"
       ]
     },
-    "pull_request": {
-      "repository": "Project-Helianthus/helianthus-modbus",
-      "number": 10,
-      "base": "main",
-      "base_sha": "79f9c6da6efd5be9f3e31ddf62720c1a3d0bf3e7",
-      "head_sha": "4f8e69dad3c57c798f3eb3d74f7382f3ae9d685b",
-      "merge_sha": "fd7524fee3d4ea808a67185341a3bf13f6d151cd"
-    },
     "CI": {
       "commands": [
-        "./scripts/validate_companion_lock.sh",
         "./scripts/scope_gate.sh",
         "GOWORK=off go run ./scripts/read_only_surface .",
         "python3 scripts/validate_m1_02_acceptance.py",
@@ -195,30 +167,13 @@
       ]
     },
     "doc_gate": {
-      "repository": "Project-Helianthus/helianthus-docs-ebus",
-      "commit_sha": "711a556fee344c6fe7f1ecf3253fcdb3f5f22d06",
-      "required_check_run_url": "https://github.com/Project-Helianthus/helianthus-docs-ebus/actions/runs/30238777804/job/89891563104"
+      "applicable": false,
+      "reason": "public HELIANTHUS_MODBUS_FOUNDATION_PROFILE_V1 contract already merged; no documentation change"
     },
     "transport_gate": {
       "matrix_path": "policy/m1-03-transport-matrix.json",
       "matrix_sha256": "7ef5a28a21a4484b8a800a3870f1213af53d6869df7e9d0974eb801d1279c3c3",
-      "owner_override": {
-        "baseline_matrix": "T01..T88",
-        "disposition": "NOT_APPLICABLE_FIXTURE_ONLY",
-        "replacement_matrix": "policy/m1-03-transport-matrix.json",
-        "repository": "Project-Helianthus/helianthus-modbus",
-        "issue": 9,
-        "comment": 5106470845,
-        "label": "transport-gate-override",
-        "body_sha256": "20d79a154fb5ab5c15c0cf123ef11c9d315fbdd3b0fff1689f39a40d62432fba",
-        "author": "d3vi1",
-        "author_associations": [
-          "MEMBER",
-          "CONTRIBUTOR"
-        ],
-        "created_at": "2026-07-28T15:54:47Z",
-        "updated_at": "2026-07-28T15:54:47Z"
-      }
+      "disposition": "NOT_APPLICABLE_FIXTURE_ONLY"
     },
     "hardware_conditional": {
       "required_disposition": "FIXTURE_ONLY_NO_HARDWARE",

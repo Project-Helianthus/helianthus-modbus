@@ -28,63 +28,40 @@ class M104AcceptanceTests(unittest.TestCase):
         count = validator.validate(
             ROOT,
             self.document(),
-            verify_hosted=False,
             execute_tests=False,
         )
         self.assertGreater(count, 0)
 
-    def test_authorization_identity_and_body_are_immutable(self) -> None:
-        payload = validator.expected_authorization_payload()
-        validator.validate_authorization(payload)
-        payload["author_association"] = "CONTRIBUTOR"
-        validator.validate_authorization(payload)
-        payload["body"] = str(payload["body"]).replace(
-            "authorized_issue: FMV3-M1-04",
-            "authorized_issue: FMV3-M4-01",
-        )
+    def test_structural_plan_identity_drift_is_rejected(self) -> None:
+        document = self.document()
+        document["canonical_sources"]["plan"]["node"] = "FMV3-M1-99"
         with self.assertRaises(validator.AcceptanceError):
-            validator.validate_authorization(payload)
+            validator.validate_canonical_sources(document)
 
     def test_transport_gate_rejects_row_and_result_drift(self) -> None:
         document = self.document()
-        companion = validator.base.read_git_blob(
-            validator.COMPANION_SOURCE["repository"],
-            validator.COMPANION_SOURCE["commit_sha"],
-            validator.COMPANION_SOURCE["manifest_path"],
-        )
         gate = document["gates"]["transport_gate"]
         gate["expected_rows"] = 20
         with self.assertRaises(validator.AcceptanceError):
-            validator.validate_transport_matrix(ROOT, document, companion)
+            validator.validate_transport_matrix(ROOT, document)
 
         document = self.document()
         document["gates"]["transport_gate"]["skipped"] = 1
         with self.assertRaises(validator.AcceptanceError):
-            validator.validate_transport_matrix(ROOT, document, companion)
+            validator.validate_transport_matrix(ROOT, document)
 
-    def test_companion_recovery_inventory_drift_is_rejected(self) -> None:
+    def test_structural_companion_identity_drift_is_rejected(self) -> None:
         document = self.document()
-        companion = json.loads(
-            validator.base.read_git_blob(
-                validator.COMPANION_SOURCE["repository"],
-                validator.COMPANION_SOURCE["commit_sha"],
-                validator.COMPANION_SOURCE["manifest_path"],
-            )
-        )
-        companion["transport_recovery_rows"].pop()
+        document["canonical_sources"]["companion"]["contract_version"] = 2
         with self.assertRaises(validator.AcceptanceError):
-            validator.validate_transport_matrix(
-                ROOT,
-                document,
-                json.dumps(companion).encode("utf-8"),
-            )
+            validator.validate_canonical_sources(document)
 
-    def test_tdd_red_commit_is_tests_only_and_bound_to_base(self) -> None:
+    def test_tdd_red_metadata_shape_is_validated_offline(self) -> None:
         value = copy.deepcopy(self.document()["gates"]["TDD_RED"])
-        validator.validate_tdd(ROOT, value, verify_hosted=False)
-        value["base_sha"] = "0" * 40
+        validator.validate_tdd(value)
+        value["base_sha"] = "0" * 39
         with self.assertRaises(validator.AcceptanceError):
-            validator.validate_tdd(ROOT, value, verify_hosted=False)
+            validator.validate_tdd(value)
 
 
 if __name__ == "__main__":

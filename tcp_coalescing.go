@@ -118,26 +118,27 @@ type coalescedDependent struct {
 
 // CoalescedRead is one physical request plus its bounded logical dependents.
 type CoalescedRead struct {
-	mu                 sync.Mutex
-	physical           ReadRegistersRequest
-	dependents         []coalescedDependent
-	endpoint           string
-	transport          TransportFamily
-	intentGeneration   uint64
-	unitID             byte
-	authorizationScope string
-	pollGeneration     uint64
-	deadlineIdentity   uint64
-	operationDeadline  time.Duration
-	owner              *TCPConnectionOwner
-	reservation        TCPReservation
-	physicalRequestID  uint64
-	generation         uint64
-	writeBegun         bool
-	completed          bool
-	scheduler          *EndpointScheduler
-	admissionKey       AdmissionKey
-	tcpTransport       *TCPTransport
+	mu                       sync.Mutex
+	physical                 ReadRegistersRequest
+	dependents               []coalescedDependent
+	endpoint                 string
+	transport                TransportFamily
+	intentGeneration         uint64
+	unitID                   byte
+	authorizationScope       string
+	pollGeneration           uint64
+	deadlineIdentity         uint64
+	operationDeadline        time.Duration
+	owner                    *TCPConnectionOwner
+	reservation              TCPReservation
+	physicalRequestID        uint64
+	generation               uint64
+	writeBegun               bool
+	completed                bool
+	scheduler                *EndpointScheduler
+	admissionKey             AdmissionKey
+	tcpTransport             *TCPTransport
+	runtimeAcquisitionSource *RuntimeAcquisitionSource
 }
 
 func (group *CoalescedRead) setOperationDeadline(
@@ -149,6 +150,19 @@ func (group *CoalescedRead) setOperationDeadline(
 	group.mu.Lock()
 	if !group.writeBegun && !group.completed {
 		group.operationDeadline = deadline
+	}
+	group.mu.Unlock()
+}
+
+func (group *CoalescedRead) setRuntimeAcquisitionSource(
+	source *RuntimeAcquisitionSource,
+) {
+	if group == nil {
+		return
+	}
+	group.mu.Lock()
+	if !group.writeBegun && !group.completed {
+		group.runtimeAcquisitionSource = source
 	}
 	group.mu.Unlock()
 }
@@ -772,14 +786,16 @@ func (group *CoalescedRead) activeDependentCountLocked() int {
 
 // LogicalReadView is one exact successful dependent observation.
 type LogicalReadView struct {
-	logicalViewID  uint64
-	wireResponseID uint64
-	logicalOffset  uint16
-	logicalWords   uint16
-	sliceOffset    uint16
-	sliceWordCount uint16
-	words          []uint16
-	provenance     LogicalViewProvenance
+	logicalViewID      uint64
+	wireResponseID     uint64
+	logicalOffset      uint16
+	logicalWords       uint16
+	sliceOffset        uint16
+	sliceWordCount     uint16
+	words              []uint16
+	wireBytes          []byte
+	provenance         LogicalViewProvenance
+	runtimeEligibility *runtimeViewEligibility
 }
 
 // LogicalViewProvenance is the self-contained physical/logical source record.
@@ -934,6 +950,7 @@ func (group *CoalescedRead) ReplaySuccessfulResponse(
 				[]uint16(nil),
 				physicalWords[int(start):int(end)]...,
 			),
+			wireBytes: append([]byte(nil), response.bytes...),
 			provenance: LogicalViewProvenance{
 				PhysicalRequestID:  response.physicalRequestID,
 				Wire:               response.provenance,
@@ -945,6 +962,9 @@ func (group *CoalescedRead) ReplaySuccessfulResponse(
 				SliceOffset:        dependent.slice.sliceOffset,
 				SliceWordCount:     dependent.slice.sliceWordCount,
 			},
+			runtimeEligibility: newRuntimeViewEligibility(
+				group.runtimeAcquisitionSource,
+			),
 		})
 		dependent.state = dependentDelivered
 	}

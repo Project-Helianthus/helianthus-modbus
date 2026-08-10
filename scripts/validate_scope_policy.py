@@ -57,7 +57,7 @@ EXPECTED_POLICY = {
             "daea0680aa70f1a552fc6facdd35e54161728c673625088c599951d560155231"
         ),
         "runtime_acquisition.go": (
-            "a28171d8c41887120a5c878357bef4d8b7895b795859bd7158edbbfa433bdf11"
+            "efa2aa5125d203dbf2bcd95330a279ee32e10ef6cb0f74d9fe030ec666112c0e"
         ),
         "runtime_normalization.go": (
             "0e45d3ae333556b8cd7633151e324752c994e9a427875a0c4e611510e7313b9d"
@@ -103,7 +103,7 @@ EXPECTED_POLICY = {
             "67eefbf1db0b90cf172e627ad9c21a1a6641d8231500504d7f3b3e9f55d93add"
         ),
         "scripts/validate_m1_06_conformance.py": (
-            "cf29ca47d3267393f6d28d437d6bef594570c3e996cc62b7cb3555becc6d06a2"
+            "370d6e07b6f7319fb44a7d41ca169ecbcb7bb48d5eb05364c39dc59d3a8f42ad"
         ),
     },
     "allowed_operations": [

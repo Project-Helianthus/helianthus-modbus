@@ -161,6 +161,7 @@ type RuntimeAcquisitionSource struct {
 	mu                         sync.Mutex
 	config                     RuntimeAcquisitionConfig
 	attempts                   map[*runtimeAttemptToken]*runtimeAttemptState
+	drainedAttempts            map[*runtimeAttemptToken]struct{}
 	live                       map[*runtimeCapabilityToken]*runtimeCapabilityState
 	tombstones                 []RuntimeCapabilityTombstone
 	nextTerminalSequence       uint64
@@ -253,6 +254,7 @@ func NewRuntimeAcquisitionSource(
 	source := &RuntimeAcquisitionSource{
 		config:               config,
 		attempts:             make(map[*runtimeAttemptToken]*runtimeAttemptState),
+		drainedAttempts:      make(map[*runtimeAttemptToken]struct{}),
 		live:                 make(map[*runtimeCapabilityToken]*runtimeCapabilityState),
 		nextTerminalSequence: 1,
 	}
@@ -403,7 +405,8 @@ func (source *RuntimeAcquisitionSource) BeginAttempt(
 	if source.retired {
 		return nil, ErrRuntimeAcquisitionUnavailable
 	}
-	if len(source.attempts) >= source.config.Limits.MaxAttempts {
+	if len(source.attempts)+len(source.drainedAttempts) >=
+		source.config.Limits.MaxAttempts {
 		return nil, ErrRuntimeAcquisitionCapacity
 	}
 	token := &runtimeAttemptToken{}
@@ -720,7 +723,15 @@ func (source *RuntimeAcquisitionSource) CancelOpen(
 	source.mu.Lock()
 	defer source.mu.Unlock()
 	attempt := source.attempts[instance.token]
-	if attempt == nil || attempt.phase != runtimeAttemptClosed {
+	if attempt == nil {
+		if _, drained := source.drainedAttempts[instance.token]; !drained {
+			return ErrRuntimeAttemptClosed
+		}
+		delete(source.drainedAttempts, instance.token)
+		instance.token.source.Store(nil)
+		return nil
+	}
+	if attempt.phase != runtimeAttemptClosed {
 		return ErrRuntimeAttemptClosed
 	}
 	for _, member := range attempt.members {
@@ -828,7 +839,7 @@ func (source *RuntimeAcquisitionSource) reclaimAttemptIfTerminalLocked(
 		}
 	}
 	delete(source.attempts, attempt.token)
-	attempt.token.source.Store(nil)
+	source.drainedAttempts[attempt.token] = struct{}{}
 }
 
 func runtimeOutcomeCode(outcome RuntimeCapabilityTerminalOutcome) uint32 {
@@ -904,6 +915,10 @@ func (source *RuntimeAcquisitionSource) ExportRestartState() (
 	}
 	if len(source.live) != 0 || len(source.attempts) != 0 {
 		return RuntimeAcquisitionRestartState{}, ErrRuntimeAcquisitionUnavailable
+	}
+	for token := range source.drainedAttempts {
+		delete(source.drainedAttempts, token)
+		token.source.Store(nil)
 	}
 	restart := RuntimeAcquisitionRestartState{
 		SchemaVersion:        1,

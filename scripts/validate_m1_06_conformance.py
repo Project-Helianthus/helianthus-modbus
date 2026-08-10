@@ -42,7 +42,9 @@ REQUIREMENTS = {
         "TestM106MembershipCloseRejectsLateRegistration"
     },
     "exact_instance_cancel_open_drain": {
-        "TestM106CancelOpenUsesExactInstanceAndDrainsMembers"
+        "TestM106CancelOpenUsesExactInstanceAndDrainsMembers",
+        "TestM106CancelOpenAcceptsDrainedExactTerminalInstance",
+        "TestM106CancelOpenDrainedInstanceLinearizesOnceAndStaysExact",
     },
     "bounded_sequences_reclamation_restart": {
         "TestM106BoundsExhaustionAndDeterministicTombstones",

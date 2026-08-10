@@ -891,6 +891,256 @@ func TestM106CancelOpenUsesExactInstanceAndDrainsMembers(t *testing.T) {
 	}
 }
 
+func TestM106CancelOpenAcceptsDrainedExactTerminalInstance(t *testing.T) {
+	tests := []struct {
+		name        string
+		memberCount int
+		terminalize func(
+			t *testing.T,
+			source *RuntimeAcquisitionSource,
+			clock *virtualTCPClock,
+			members []RuntimeAcquisition,
+			instance RuntimeAttemptInstance,
+		)
+	}{
+		{
+			name:        "all_claimed",
+			memberCount: 3,
+			terminalize: func(
+				t *testing.T,
+				_ *RuntimeAcquisitionSource,
+				_ *virtualTCPClock,
+				members []RuntimeAcquisition,
+				instance RuntimeAttemptInstance,
+			) {
+				for index, member := range members {
+					result, err := member.Capability().Claim(instance)
+					if err != nil || !result.Won ||
+						result.Outcome != RuntimeCapabilityClaimed {
+						t.Fatalf("Claim(%d)=%#v err=%v", index, result, err)
+					}
+				}
+			},
+		},
+		{
+			name:        "all_failed",
+			memberCount: 3,
+			terminalize: func(
+				t *testing.T,
+				source *RuntimeAcquisitionSource,
+				_ *virtualTCPClock,
+				members []RuntimeAcquisition,
+				_ RuntimeAttemptInstance,
+			) {
+				for index, member := range members {
+					outcome, err := source.FailOpen(member.Capability())
+					if err != nil || outcome != RuntimeCapabilityFailed {
+						t.Fatalf("FailOpen(%d)=%q err=%v", index, outcome, err)
+					}
+				}
+			},
+		},
+		{
+			name:        "all_expired",
+			memberCount: 3,
+			terminalize: func(
+				t *testing.T,
+				source *RuntimeAcquisitionSource,
+				clock *virtualTCPClock,
+				_ []RuntimeAcquisition,
+				_ RuntimeAttemptInstance,
+			) {
+				clock.Advance(time.Minute)
+				if count := source.ExpireOpen(); count != 3 {
+					t.Fatalf("ExpireOpen count=%d", count)
+				}
+			},
+		},
+		{
+			name:        "mixed_terminal",
+			memberCount: 3,
+			terminalize: func(
+				t *testing.T,
+				source *RuntimeAcquisitionSource,
+				clock *virtualTCPClock,
+				members []RuntimeAcquisition,
+				instance RuntimeAttemptInstance,
+			) {
+				if result, err := members[0].Capability().Claim(instance); err != nil ||
+					!result.Won || result.Outcome != RuntimeCapabilityClaimed {
+					t.Fatalf("Claim=%#v err=%v", result, err)
+				}
+				if outcome, err := source.FailOpen(members[1].Capability()); err != nil ||
+					outcome != RuntimeCapabilityFailed {
+					t.Fatalf("FailOpen=%q err=%v", outcome, err)
+				}
+				clock.Advance(time.Minute)
+				if count := source.ExpireOpen(); count != 1 {
+					t.Fatalf("ExpireOpen count=%d", count)
+				}
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			clock := &virtualTCPClock{}
+			config := runtimeAcquisitionConfigForTest(clock)
+			config.Limits.MaxAttempts = 1
+			source, err := NewRuntimeAcquisitionSource(config)
+			if err != nil {
+				t.Fatalf("NewRuntimeAcquisitionSource: %v", err)
+			}
+			reads := make([]runtimeReadForTest, test.memberCount)
+			for index := range reads {
+				reads[index] = runtimeReadForTest{
+					logicalViewID: uint64(420 + index),
+					offset:        52,
+					quantity:      1,
+				}
+			}
+			views := runtimeSuccessfulViewsForTest(
+				t, source, clock, reads, []uint16{0x4242},
+			)
+			attempt, err := source.BeginAttempt("drained-" + test.name)
+			if err != nil {
+				t.Fatalf("BeginAttempt: %v", err)
+			}
+			members := make([]RuntimeAcquisition, test.memberCount)
+			for index := range members {
+				members[index] = issueRuntimeAcquisitionForTest(
+					t,
+					source,
+					attempt,
+					uint32(index),
+					views[index],
+					fmt.Sprintf("drained-%s-%d", test.name, index),
+				)
+			}
+			instance, err := attempt.Close(members)
+			if err != nil {
+				t.Fatalf("Close: %v", err)
+			}
+			test.terminalize(t, source, clock, members, instance)
+
+			snapshot := source.Snapshot()
+			if snapshot.LiveCapabilities != 0 || snapshot.ActiveAttempts != 0 ||
+				len(source.drainedAttempts) != 1 {
+				t.Fatalf("drained state snapshot=%#v proofs=%d", snapshot, len(source.drainedAttempts))
+			}
+			if next, beginErr := source.BeginAttempt("capacity-before-drain"); !errors.Is(beginErr, ErrRuntimeAcquisitionCapacity) || next != nil {
+				t.Fatalf("BeginAttempt before drain=%#v err=%v", next, beginErr)
+			}
+			if err := source.CancelOpen(instance); err != nil {
+				t.Fatalf("first drained CancelOpen: %v", err)
+			}
+			if len(source.drainedAttempts) != 0 {
+				t.Fatalf("drained proofs after CancelOpen=%d", len(source.drainedAttempts))
+			}
+			if err := source.CancelOpen(instance); !errors.Is(err, ErrRuntimeAttemptClosed) {
+				t.Fatalf("duplicate CancelOpen err=%v", err)
+			}
+			next, err := source.BeginAttempt("capacity-after-drain")
+			if err != nil {
+				t.Fatalf("BeginAttempt after drain: %v", err)
+			}
+			if _, err := next.Close(nil); !errors.Is(err, ErrRuntimeAttemptMembership) {
+				t.Fatalf("Close empty successor err=%v", err)
+			}
+		})
+	}
+}
+
+func TestM106CancelOpenDrainedInstanceLinearizesOnceAndStaysExact(t *testing.T) {
+	clock := &virtualTCPClock{}
+	source := newRuntimeAcquisitionSourceForTest(t, clock)
+	views := runtimeSuccessfulViewsForTest(
+		t,
+		source,
+		clock,
+		[]runtimeReadForTest{
+			{logicalViewID: 431, offset: 54, quantity: 1},
+			{logicalViewID: 432, offset: 54, quantity: 1},
+		},
+		[]uint16{0x4343},
+	)
+	firstAttempt, err := source.BeginAttempt("same-drained-key")
+	if err != nil {
+		t.Fatalf("BeginAttempt(first): %v", err)
+	}
+	first := issueRuntimeAcquisitionForTest(
+		t, source, firstAttempt, 0, views[0], "drained-first",
+	)
+	firstInstance, err := firstAttempt.Close([]RuntimeAcquisition{first})
+	if err != nil {
+		t.Fatalf("Close(first): %v", err)
+	}
+	if result, err := first.Capability().Claim(firstInstance); err != nil || !result.Won {
+		t.Fatalf("Claim(first)=%#v err=%v", result, err)
+	}
+
+	const callers = 32
+	start := make(chan struct{})
+	results := make(chan error, callers)
+	var group sync.WaitGroup
+	for range callers {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			<-start
+			results <- source.CancelOpen(firstInstance)
+		}()
+	}
+	close(start)
+	group.Wait()
+	close(results)
+	succeeded := 0
+	closed := 0
+	for err := range results {
+		switch {
+		case err == nil:
+			succeeded++
+		case errors.Is(err, ErrRuntimeAttemptClosed):
+			closed++
+		default:
+			t.Fatalf("concurrent CancelOpen err=%v", err)
+		}
+	}
+	if succeeded != 1 || closed != callers-1 {
+		t.Fatalf("concurrent CancelOpen succeeded=%d closed=%d", succeeded, closed)
+	}
+
+	secondAttempt, err := source.BeginAttempt("same-drained-key")
+	if err != nil {
+		t.Fatalf("BeginAttempt(second): %v", err)
+	}
+	second := issueRuntimeAcquisitionForTest(
+		t, source, secondAttempt, 0, views[1], "drained-second",
+	)
+	secondInstance, err := secondAttempt.Close([]RuntimeAcquisition{second})
+	if err != nil {
+		t.Fatalf("Close(second): %v", err)
+	}
+	if err := source.CancelOpen(firstInstance); !errors.Is(err, ErrRuntimeAttemptClosed) {
+		t.Fatalf("stale first CancelOpen err=%v", err)
+	}
+	if result, err := second.Capability().Claim(secondInstance); err != nil ||
+		!result.Won || result.Outcome != RuntimeCapabilityClaimed {
+		t.Fatalf("Claim(second)=%#v err=%v", result, err)
+	}
+	if err := source.CancelOpen(secondInstance); err != nil {
+		t.Fatalf("CancelOpen(second drained): %v", err)
+	}
+	tombstones := source.Snapshot().Tombstones
+	if len(tombstones) != 2 ||
+		tombstones[0].TerminalSequence != 1 ||
+		tombstones[1].TerminalSequence != 2 ||
+		tombstones[0].TerminalOutcome != RuntimeCapabilityClaimed ||
+		tombstones[1].TerminalOutcome != RuntimeCapabilityClaimed {
+		t.Fatalf("terminal sequence tombstones=%#v", tombstones)
+	}
+}
+
 func TestM106BoundsExhaustionAndDeterministicTombstones(t *testing.T) {
 	clock := &virtualTCPClock{}
 	config := runtimeAcquisitionConfigForTest(clock)
@@ -970,6 +1220,15 @@ func TestM106BoundsExhaustionAndDeterministicTombstones(t *testing.T) {
 	restart, err := source.ExportRestartState()
 	if err != nil {
 		t.Fatalf("ExportRestartState: %v", err)
+	}
+	if len(source.drainedAttempts) != 0 {
+		t.Fatalf("drained proofs after export=%d", len(source.drainedAttempts))
+	}
+	if err := source.CancelOpen(firstInstance); !errors.Is(err, ErrRuntimeAttemptClosed) {
+		t.Fatalf("exported first CancelOpen err=%v", err)
+	}
+	if err := source.CancelOpen(fourthInstance); !errors.Is(err, ErrRuntimeAttemptClosed) {
+		t.Fatalf("exported fourth CancelOpen err=%v", err)
 	}
 	restoredConfig := config
 	restoredConfig.Restart = &restart

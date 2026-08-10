@@ -39,7 +39,9 @@
     {
       "id": "exact_instance_cancel_open_drain",
       "tests": [
-        "TestM106CancelOpenUsesExactInstanceAndDrainsMembers"
+        "TestM106CancelOpenUsesExactInstanceAndDrainsMembers",
+        "TestM106CancelOpenAcceptsDrainedExactTerminalInstance",
+        "TestM106CancelOpenDrainedInstanceLinearizesOnceAndStaysExact"
       ]
     },
     {

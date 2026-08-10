@@ -158,15 +158,16 @@ type runtimeCapabilityState struct {
 // RuntimeAcquisitionSource owns issuance, claim state, cancellation, and
 // deterministic reclamation. It contains no transport or consumer policy.
 type RuntimeAcquisitionSource struct {
-	mu                   sync.Mutex
-	config               RuntimeAcquisitionConfig
-	attempts             map[*runtimeAttemptToken]*runtimeAttemptState
-	live                 map[*runtimeCapabilityToken]*runtimeCapabilityState
-	tombstones           []RuntimeCapabilityTombstone
-	nextTerminalSequence uint64
-	sequenceExhausted    bool
-	retired              bool
-	beforeMembership     func()
+	mu                         sync.Mutex
+	config                     RuntimeAcquisitionConfig
+	attempts                   map[*runtimeAttemptToken]*runtimeAttemptState
+	live                       map[*runtimeCapabilityToken]*runtimeCapabilityState
+	tombstones                 []RuntimeCapabilityTombstone
+	nextTerminalSequence       uint64
+	sequenceExhausted          bool
+	retired                    bool
+	beforeMembership           func()
+	beforeNormalizationPublish func()
 }
 
 // RuntimeAttempt is an opaque open membership handle.

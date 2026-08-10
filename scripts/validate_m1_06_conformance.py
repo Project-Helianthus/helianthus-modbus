@@ -55,6 +55,8 @@ REQUIREMENTS = {
     "bounded_normalization_activation": {
         "TestM106NormalizationAndActivationBoundsFailClosed",
         "TestM106NormalizationExactSerializationBoundary",
+        "TestM106NormalizationRequiredFieldsRejectNullAndWrongTypes",
+        "TestM106NormalizationParseLinearizesWithRestartExport",
     },
 }
 CI_COMMANDS = (

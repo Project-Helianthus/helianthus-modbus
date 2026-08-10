@@ -55,7 +55,16 @@ var runtimeNormalizationRequiredFields = map[string]struct{}{
 func (source *RuntimeAcquisitionSource) ParseNormalizationRecord(
 	encoded []byte,
 ) (RuntimeNormalizationRecord, error) {
-	if source == nil || len(encoded) == 0 ||
+	if source == nil {
+		return RuntimeNormalizationRecord{}, ErrRuntimeNormalization
+	}
+	source.mu.Lock()
+	retired := source.retired
+	source.mu.Unlock()
+	if retired {
+		return RuntimeNormalizationRecord{}, ErrRuntimeAcquisitionUnavailable
+	}
+	if len(encoded) == 0 ||
 		len(encoded) > source.config.Limits.NormalizationRecordMaxEncodedBytes ||
 		!utf8.Valid(encoded) {
 		return RuntimeNormalizationRecord{}, ErrRuntimeNormalization
@@ -72,9 +81,18 @@ func (source *RuntimeAcquisitionSource) ParseNormalizationRecord(
 	if err != nil {
 		return RuntimeNormalizationRecord{}, err
 	}
+	retained := append([]byte(nil), encoded...)
+	if hook := source.beforeNormalizationPublish; hook != nil {
+		hook()
+	}
+	source.mu.Lock()
+	defer source.mu.Unlock()
+	if source.retired {
+		return RuntimeNormalizationRecord{}, ErrRuntimeAcquisitionUnavailable
+	}
 	return RuntimeNormalizationRecord{
 		owner:   source,
-		encoded: append([]byte(nil), encoded...),
+		encoded: retained,
 		fields:  fields,
 	}, nil
 }
@@ -138,13 +156,13 @@ func (source *RuntimeAcquisitionSource) decodeNormalizationFields(
 		}
 	}
 	var fields RuntimeNormalizationFields
-	if err := decodeRuntimeNormalizationValue(
+	if err := decodeRuntimeNormalizationNumber(
 		values["schema_version"],
 		&fields.SchemaVersion,
 	); err != nil || fields.SchemaVersion != 1 {
 		return RuntimeNormalizationFields{}, ErrRuntimeNormalization
 	}
-	if err := decodeRuntimeNormalizationValue(
+	if err := decodeRuntimeNormalizationString(
 		values["source_kind"],
 		&fields.SourceKind,
 	); err != nil {
@@ -180,7 +198,7 @@ func (source *RuntimeAcquisitionSource) decodeNormalizationFields(
 		},
 	}
 	for _, field := range strings {
-		if err := decodeRuntimeNormalizationValue(
+		if err := decodeRuntimeNormalizationString(
 			field.raw,
 			field.destination,
 		); err != nil || *field.destination == "" ||
@@ -189,33 +207,33 @@ func (source *RuntimeAcquisitionSource) decodeNormalizationFields(
 			return RuntimeNormalizationFields{}, ErrRuntimeNormalization
 		}
 	}
-	if err := decodeRuntimeNormalizationValue(
+	if err := decodeRuntimeNormalizationNumber(
 		values["documentary_address"],
 		&fields.DocumentaryAddress,
 	); err != nil {
 		return RuntimeNormalizationFields{}, ErrRuntimeNormalization
 	}
 	var function uint8
-	if err := decodeRuntimeNormalizationValue(
+	if err := decodeRuntimeNormalizationNumber(
 		values["function_code"],
 		&function,
 	); err != nil {
 		return RuntimeNormalizationFields{}, ErrRuntimeNormalization
 	}
 	fields.FunctionCode = FunctionCode(function)
-	if err := decodeRuntimeNormalizationValue(
+	if err := decodeRuntimeNormalizationString(
 		values["logical_table"],
 		&fields.LogicalTable,
 	); err != nil || !utf8.ValidString(string(fields.LogicalTable)) {
 		return RuntimeNormalizationFields{}, ErrRuntimeNormalization
 	}
-	if err := decodeRuntimeNormalizationValue(
+	if err := decodeRuntimeNormalizationNumber(
 		values["normalized_zero_based_pdu_offset"],
 		&fields.NormalizedZeroBasedPDUOffset,
 	); err != nil {
 		return RuntimeNormalizationFields{}, ErrRuntimeNormalization
 	}
-	if err := decodeRuntimeNormalizationValue(
+	if err := decodeRuntimeNormalizationNumber(
 		values["word_count"],
 		&fields.WordCount,
 	); err != nil || fields.WordCount == 0 ||
@@ -240,6 +258,29 @@ func (source *RuntimeAcquisitionSource) decodeNormalizationFields(
 		return RuntimeNormalizationFields{}, ErrRuntimeNormalization
 	}
 	return fields, nil
+}
+
+func decodeRuntimeNormalizationString(
+	raw json.RawMessage,
+	destination any,
+) error {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || trimmed[0] != '"' {
+		return ErrRuntimeNormalization
+	}
+	return decodeRuntimeNormalizationValue(trimmed, destination)
+}
+
+func decodeRuntimeNormalizationNumber(
+	raw json.RawMessage,
+	destination any,
+) error {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 ||
+		(trimmed[0] != '-' && (trimmed[0] < '0' || trimmed[0] > '9')) {
+		return ErrRuntimeNormalization
+	}
+	return decodeRuntimeNormalizationValue(trimmed, destination)
 }
 
 func decodeRuntimeNormalizationValue(

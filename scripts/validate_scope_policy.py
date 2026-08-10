@@ -57,10 +57,10 @@ EXPECTED_POLICY = {
             "daea0680aa70f1a552fc6facdd35e54161728c673625088c599951d560155231"
         ),
         "runtime_acquisition.go": (
-            "db02abc26df862639d974dec3b63cabb389d9228eaf84a5ba053438b274927ed"
+            "a28171d8c41887120a5c878357bef4d8b7895b795859bd7158edbbfa433bdf11"
         ),
         "runtime_normalization.go": (
-            "8e3c3561f96ca8c1a6c7f29696319ead36a0186c6974d6690bdef43118c127dd"
+            "0e45d3ae333556b8cd7633151e324752c994e9a427875a0c4e611510e7313b9d"
         ),
         "tcp_adu.go": (
             "29468e151d3b241ac49cda6e97be2c1e78561bb41703be347ff0dbf17650c42b"
@@ -103,7 +103,7 @@ EXPECTED_POLICY = {
             "67eefbf1db0b90cf172e627ad9c21a1a6641d8231500504d7f3b3e9f55d93add"
         ),
         "scripts/validate_m1_06_conformance.py": (
-            "01e30441ab38cef40f3dd65dc2bf00090e70333961be140961d95a344f7c633c"
+            "cf29ca47d3267393f6d28d437d6bef594570c3e996cc62b7cb3555becc6d06a2"
         ),
     },
     "allowed_operations": [

@@ -60,7 +60,9 @@
       "id": "bounded_normalization_activation",
       "tests": [
         "TestM106NormalizationAndActivationBoundsFailClosed",
-        "TestM106NormalizationExactSerializationBoundary"
+        "TestM106NormalizationExactSerializationBoundary",
+        "TestM106NormalizationRequiredFieldsRejectNullAndWrongTypes",
+        "TestM106NormalizationParseLinearizesWithRestartExport"
       ]
     }
   ],

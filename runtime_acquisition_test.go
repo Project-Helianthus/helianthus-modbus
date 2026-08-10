@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"net"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -148,7 +149,31 @@ func runtimeNormalizationForTest(
 	extension string,
 ) RuntimeNormalizationRecord {
 	t.Helper()
-	encoded := []byte(fmt.Sprintf(
+	encoded := runtimeNormalizationBytesForTest(
+		sourceKind,
+		evidenceID,
+		offset,
+		wordCount,
+		extension,
+	)
+	record, err := source.ParseNormalizationRecord(encoded)
+	if err != nil {
+		t.Fatalf("ParseNormalizationRecord: %v\n%s", err, encoded)
+	}
+	if !bytes.Equal(record.Bytes(), encoded) {
+		t.Fatalf("normalization bytes changed:\n got %s\nwant %s", record.Bytes(), encoded)
+	}
+	return record
+}
+
+func runtimeNormalizationBytesForTest(
+	sourceKind RuntimeAcquisitionSourceKind,
+	evidenceID string,
+	offset uint16,
+	wordCount uint16,
+	extension string,
+) []byte {
+	return []byte(fmt.Sprintf(
 		`{"schema_version":1,"source_kind":%q,"source_evidence_id":%q,`+
 			`"documentary_notation":"4xxxx","documentary_address":%d,`+
 			`"documentary_address_base":"holding_reference_4xxxx",`+
@@ -161,14 +186,6 @@ func runtimeNormalizationForTest(
 		wordCount,
 		extension,
 	))
-	record, err := source.ParseNormalizationRecord(encoded)
-	if err != nil {
-		t.Fatalf("ParseNormalizationRecord: %v\n%s", err, encoded)
-	}
-	if !bytes.Equal(record.Bytes(), encoded) {
-		t.Fatalf("normalization bytes changed:\n got %s\nwant %s", record.Bytes(), encoded)
-	}
-	return record
 }
 
 func issueRuntimeAcquisitionForTest(
@@ -1240,6 +1257,132 @@ func TestM106PrivateCapabilityStateIsNotSerializableOrReconstructable(t *testing
 	if err := source.CancelOpen(instance); err != nil {
 		t.Fatalf("CancelOpen: %v", err)
 	}
+}
+
+func TestM106NormalizationRequiredFieldsRejectNullAndWrongTypes(t *testing.T) {
+	clock := &virtualTCPClock{}
+	source := newRuntimeAcquisitionSourceForTest(t, clock)
+	view := runtimeSuccessfulViewsForTest(
+		t,
+		source,
+		clock,
+		[]runtimeReadForTest{{logicalViewID: 611, offset: 0, quantity: 1}},
+		[]uint16{0x6111},
+	)[0]
+	valid := string(runtimeNormalizationBytesForTest(
+		RuntimeAcquisitionSourceRuntime,
+		"typed-fields",
+		0,
+		1,
+		"",
+	))
+	tests := []struct {
+		name      string
+		token     string
+		wrongType string
+	}{
+		{"schema_version", `"schema_version":1`, `"schema_version":"1"`},
+		{"source_kind", `"source_kind":"runtime"`, `"source_kind":1`},
+		{"source_evidence_id", `"source_evidence_id":"typed-fields"`, `"source_evidence_id":1`},
+		{"documentary_notation", `"documentary_notation":"4xxxx"`, `"documentary_notation":1`},
+		{"documentary_address", `"documentary_address":40001`, `"documentary_address":"40001"`},
+		{"documentary_address_base", `"documentary_address_base":"holding_reference_4xxxx"`, `"documentary_address_base":1`},
+		{"function_code", `"function_code":3`, `"function_code":"3"`},
+		{"logical_table", `"logical_table":"holding_registers"`, `"logical_table":1`},
+		{"normalized_zero_based_pdu_offset", `"normalized_zero_based_pdu_offset":0`, `"normalized_zero_based_pdu_offset":"0"`},
+		{"word_count", `"word_count":1`, `"word_count":"1"`},
+	}
+	for index, test := range tests {
+		for _, variant := range []struct {
+			name        string
+			replacement string
+		}{
+			{"null", strings.Split(test.token, ":")[0] + ":null"},
+			{"wrong_type", test.wrongType},
+		} {
+			t.Run(test.name+"/"+variant.name, func(t *testing.T) {
+				encoded := []byte(strings.Replace(valid, test.token, variant.replacement, 1))
+				record, err := source.ParseNormalizationRecord(encoded)
+				if !errors.Is(err, ErrRuntimeNormalization) || record.Valid() {
+					t.Fatalf("ParseNormalizationRecord record=%#v err=%v\n%s", record, err, encoded)
+				}
+				attempt, err := source.BeginAttempt(fmt.Sprintf("invalid-type-%d-%s", index, variant.name))
+				if err != nil {
+					t.Fatalf("BeginAttempt: %v", err)
+				}
+				if acquisition, issueErr := source.Issue(attempt, 0, view, record); !errors.Is(issueErr, ErrRuntimeAcquisitionUnavailable) || acquisition.Valid() {
+					t.Fatalf("Issue acquisition=%#v err=%v", acquisition, issueErr)
+				}
+				if _, closeErr := attempt.Close(nil); !errors.Is(closeErr, ErrRuntimeAttemptMembership) {
+					t.Fatalf("Close err=%v", closeErr)
+				}
+				if snapshot := source.Snapshot(); snapshot.LiveCapabilities != 0 ||
+					snapshot.ActiveAttempts != 0 || len(snapshot.Tombstones) != 0 {
+					t.Fatalf("invalid field retained authority: %#v", snapshot)
+				}
+			})
+		}
+	}
+}
+
+func TestM106NormalizationParseLinearizesWithRestartExport(t *testing.T) {
+	clock := &virtualTCPClock{}
+	encoded := runtimeNormalizationBytesForTest(
+		RuntimeAcquisitionSourceRuntime,
+		"parse-export",
+		70,
+		1,
+		` ,"future":{"exact":"<>&\\u003c"}`,
+	)
+
+	t.Run("pre_export_record", func(t *testing.T) {
+		source := newRuntimeAcquisitionSourceForTest(t, clock)
+		record, err := source.ParseNormalizationRecord(encoded)
+		if err != nil || !record.Valid() {
+			t.Fatalf("ParseNormalizationRecord record=%#v err=%v", record, err)
+		}
+		if _, err := source.ExportRestartState(); err != nil {
+			t.Fatalf("ExportRestartState: %v", err)
+		}
+		if !record.Valid() || !bytes.Equal(record.Bytes(), encoded) {
+			t.Fatalf("pre-export record changed: valid=%v bytes=%q", record.Valid(), record.Bytes())
+		}
+		if rejected, err := source.ParseNormalizationRecord(encoded); !errors.Is(err, ErrRuntimeAcquisitionUnavailable) || rejected.Valid() {
+			t.Fatalf("post-export parse record=%#v err=%v", rejected, err)
+		}
+	})
+
+	t.Run("export_wins_forced_race", func(t *testing.T) {
+		source := newRuntimeAcquisitionSourceForTest(t, clock)
+		beforePublish := make(chan struct{})
+		release := make(chan struct{})
+		source.beforeNormalizationPublish = func() {
+			close(beforePublish)
+			<-release
+		}
+		type parseResult struct {
+			record RuntimeNormalizationRecord
+			err    error
+		}
+		result := make(chan parseResult, 1)
+		go func() {
+			record, err := source.ParseNormalizationRecord(encoded)
+			result <- parseResult{record: record, err: err}
+		}()
+		<-beforePublish
+		if _, err := source.ExportRestartState(); err != nil {
+			t.Fatalf("ExportRestartState: %v", err)
+		}
+		close(release)
+		parsed := <-result
+		source.beforeNormalizationPublish = nil
+		if !errors.Is(parsed.err, ErrRuntimeAcquisitionUnavailable) || parsed.record.Valid() {
+			t.Fatalf("racing parse record=%#v err=%v", parsed.record, parsed.err)
+		}
+		if rejected, err := source.ParseNormalizationRecord(encoded); !errors.Is(err, ErrRuntimeAcquisitionUnavailable) || rejected.Valid() {
+			t.Fatalf("late parse record=%#v err=%v", rejected, err)
+		}
+	})
 }
 
 func TestM106NormalizationExactSerializationBoundary(t *testing.T) {

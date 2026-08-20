@@ -301,6 +301,31 @@ func TestCoalescingRefusesEveryIdentityMismatchWithoutMutation(t *testing.T) {
 	}
 }
 
+func TestCoalescingKeepsTCPUnitZeroAndUnitOneIsolated(t *testing.T) {
+	request, err := NewReadRegistersRequest(FunctionReadHoldingRegisters, 100, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := ReadIntentSpec{
+		LogicalViewID: 1, Endpoint: "tcp://192.0.2.10:502", Transport: TransportTCP,
+		TransportGeneration: 1, UnitID: 0, AuthorizationScope: "site-a",
+		PollGeneration: 1, DeadlineIdentity: 1, Request: request,
+	}
+	zero, err := NewReadIntent(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base.LogicalViewID = 2
+	base.UnitID = 1
+	one, err := NewReadIntent(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := CoalesceReads([]ReadIntent{zero, one}, 2); err == nil {
+		t.Fatal("unit-zero and unit-one reads coalesced")
+	}
+}
+
 func TestCoalescingRefusesAdjacentDisjointAndOversizedUnion(t *testing.T) {
 	tests := []struct {
 		name   string

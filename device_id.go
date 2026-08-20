@@ -26,6 +26,8 @@ type DeviceIDRequest struct {
 	access       DeviceIDAccess
 	objectID     byte
 	continuation bool
+	extended     bool
+	wrapped      bool
 }
 
 // DeviceIDObject retains an object's exact length-delimited bytes.
@@ -118,6 +120,21 @@ func NewDeviceIDRequest(
 	return DeviceIDRequest{access: access, objectID: objectID}, nil
 }
 
+// NewExtendedDeviceIDStreamRequest starts an opaque code-03 object stream.
+func NewExtendedDeviceIDStreamRequest(
+	objectID byte,
+) (DeviceIDRequest, error) {
+	request := DeviceIDRequest{
+		access:   DeviceIDExtended,
+		objectID: objectID,
+		extended: true,
+	}
+	if err := validateDeviceIDRequest(request); err != nil {
+		return DeviceIDRequest{}, err
+	}
+	return request, nil
+}
+
 // NextDeviceIDRequest binds a continuation request to its prior segment.
 func NextDeviceIDRequest(segment DeviceIDSegment) (DeviceIDRequest, error) {
 	if err := validateDeviceIDSegment(segment); err != nil {
@@ -132,10 +149,20 @@ func NextDeviceIDRequest(segment DeviceIDSegment) (DeviceIDRequest, error) {
 			-1,
 		)
 	}
+	wrapped := segment.request.wrapped
+	if segment.request.extended {
+		var err error
+		wrapped, err = validateExtendedDeviceIDProgress(segment, wrapped)
+		if err != nil {
+			return DeviceIDRequest{}, err
+		}
+	}
 	return DeviceIDRequest{
 		access:       segment.request.access,
 		objectID:     segment.nextObjectID,
 		continuation: true,
+		extended:     segment.request.extended,
+		wrapped:      wrapped,
 	}, nil
 }
 
@@ -249,7 +276,8 @@ func DecodeDeviceIDSegment(
 		)
 	}
 	nextObjectID := pdu[5]
-	if (!moreFollows && nextObjectID != 0) || (moreFollows && nextObjectID == 0) {
+	if (!moreFollows && nextObjectID != 0) ||
+		(moreFollows && nextObjectID == 0 && !request.extended) {
 		return DeviceIDSegment{}, malformedDeviceID(
 			request,
 			received,
@@ -320,12 +348,36 @@ func AggregateDeviceID(
 	segments []DeviceIDSegment,
 	limits DeviceIDLimits,
 ) (DeviceIDResult, error) {
+	return aggregateDeviceID(firstRequest, segments, limits, false)
+}
+
+// AggregateExtendedDeviceIDStream validates one complete arbitrary-start stream.
+func AggregateExtendedDeviceIDStream(
+	firstRequest DeviceIDRequest,
+	segments []DeviceIDSegment,
+	limits DeviceIDLimits,
+) (DeviceIDResult, error) {
+	return aggregateDeviceID(firstRequest, segments, limits, true)
+}
+
+func aggregateDeviceID(
+	firstRequest DeviceIDRequest,
+	segments []DeviceIDSegment,
+	limits DeviceIDLimits,
+	extended bool,
+) (DeviceIDResult, error) {
 	if err := validateDeviceIDLimits(limits); err != nil {
 		return DeviceIDResult{}, err
 	}
-	if firstRequest.access == DeviceIDIndividual ||
+	standardInvalid := firstRequest.access == DeviceIDIndividual ||
 		!validDeviceIDAccess(firstRequest.access) ||
-		firstRequest.objectID != 0 {
+		firstRequest.objectID != 0 ||
+		firstRequest.extended
+	extendedInvalid := firstRequest.access != DeviceIDExtended ||
+		!firstRequest.extended ||
+		firstRequest.continuation ||
+		firstRequest.wrapped
+	if (!extended && standardInvalid) || (extended && extendedInvalid) {
 		return DeviceIDResult{}, protocolError(
 			ErrorInvalidRequest,
 			FunctionEncapsulatedInterface,
@@ -351,6 +403,7 @@ func AggregateDeviceID(
 	var conformity DeviceIDConformity
 	var previousObjectID byte
 	havePreviousObject := false
+	wrapped := false
 
 	for index, segment := range segments {
 		if segment.request != expectedRequest {
@@ -379,8 +432,22 @@ func AggregateDeviceID(
 		copiedSegments = append(copiedSegments, copiedSegment)
 
 		for _, object := range segment.objects {
-			if _, exists := seen[object.ID]; exists ||
-				(havePreviousObject && object.ID <= previousObjectID) {
+			_, duplicate := seen[object.ID]
+			progressValid := true
+			if havePreviousObject {
+				if extended {
+					var nextWrapped bool
+					nextWrapped, progressValid = advanceExtendedDeviceIDObject(
+						previousObjectID,
+						object.ID,
+						wrapped,
+					)
+					wrapped = nextWrapped
+				} else {
+					progressValid = object.ID > previousObjectID
+				}
+			}
+			if duplicate || !progressValid {
 				return DeviceIDResult{}, malformedDeviceID(
 					expectedRequest,
 					0,
@@ -431,14 +498,16 @@ func AggregateDeviceID(
 			)
 		}
 	}
-	for objectID := byte(0); objectID <= 2; objectID++ {
-		if _, exists := seen[objectID]; !exists {
-			return DeviceIDResult{}, malformedDeviceID(
-				firstRequest,
-				0,
-				"mandatory_basic_object",
-				-1,
-			)
+	if !extended {
+		for objectID := byte(0); objectID <= 2; objectID++ {
+			if _, exists := seen[objectID]; !exists {
+				return DeviceIDResult{}, malformedDeviceID(
+					firstRequest,
+					0,
+					"mandatory_basic_object",
+					-1,
+				)
+			}
 		}
 	}
 	return DeviceIDResult{
@@ -477,7 +546,7 @@ func validateDeviceIDSegment(segment DeviceIDSegment) error {
 		return malformedDeviceID(request, 0, "number_of_objects", 6)
 	}
 	if (!segment.moreFollows && segment.nextObjectID != 0) ||
-		(segment.moreFollows && segment.nextObjectID == 0) ||
+		(segment.moreFollows && segment.nextObjectID == 0 && !request.extended) ||
 		(segment.moreFollows && len(segment.objects) == 0) {
 		return malformedDeviceID(request, 0, "continuation", -1)
 	}
@@ -489,6 +558,10 @@ func validateDeviceIDSegment(segment DeviceIDSegment) error {
 			segment.objects[0].ID != request.objectID {
 			return malformedDeviceID(request, 0, "individual_response", -1)
 		}
+	}
+	if request.extended {
+		_, err := validateExtendedDeviceIDProgress(segment, request.wrapped)
+		return err
 	}
 	var previous byte
 	encodedSize := 7
@@ -526,6 +599,106 @@ func validateDeviceIDSegment(segment DeviceIDSegment) error {
 		}
 	}
 	return nil
+}
+
+func validateExtendedDeviceIDProgress(
+	segment DeviceIDSegment,
+	wrapped bool,
+) (bool, error) {
+	request := segment.request
+	if !request.extended ||
+		request.access != DeviceIDExtended ||
+		segment.conformity&0x7f != DeviceIDConformity(DeviceIDExtended) {
+		return wrapped, malformedDeviceID(
+			request,
+			0,
+			"extended_stream_identity",
+			-1,
+		)
+	}
+	previous := request.objectID
+	haveObject := false
+	encodedSize := 7
+	seen := make(map[byte]struct{}, len(segment.objects))
+	for _, object := range segment.objects {
+		if len(object.Value) > maxDeviceIDObjectValueBytes {
+			return wrapped, malformedDeviceID(
+				request,
+				0,
+				"object_value_length",
+				-1,
+			)
+		}
+		encodedSize += 2 + len(object.Value)
+		if encodedSize > MaxPDUSize {
+			return wrapped, malformedDeviceID(
+				request,
+				0,
+				"segment_pdu_length",
+				-1,
+			)
+		}
+		if _, duplicate := seen[object.ID]; duplicate {
+			return wrapped, malformedDeviceID(
+				request,
+				0,
+				"object_progress",
+				-1,
+			)
+		}
+		seen[object.ID] = struct{}{}
+		if !haveObject && object.ID == previous {
+			haveObject = true
+			continue
+		}
+		nextWrapped, valid := advanceExtendedDeviceIDObject(
+			previous,
+			object.ID,
+			wrapped,
+		)
+		if !valid {
+			return wrapped, malformedDeviceID(
+				request,
+				0,
+				"object_progress",
+				-1,
+			)
+		}
+		wrapped = nextWrapped
+		previous = object.ID
+		haveObject = true
+	}
+	if segment.moreFollows {
+		nextWrapped, valid := advanceExtendedDeviceIDObject(
+			previous,
+			segment.nextObjectID,
+			wrapped,
+		)
+		if !valid {
+			return wrapped, malformedDeviceID(
+				request,
+				0,
+				"next_object_id",
+				5,
+			)
+		}
+		wrapped = nextWrapped
+	}
+	return wrapped, nil
+}
+
+func advanceExtendedDeviceIDObject(
+	previous byte,
+	next byte,
+	wrapped bool,
+) (bool, bool) {
+	if next > previous {
+		return wrapped, true
+	}
+	if previous == 0xff && next == 0 && !wrapped {
+		return true, true
+	}
+	return wrapped, false
 }
 
 func cloneDeviceIDObjects(objects []DeviceIDObject) []DeviceIDObject {
@@ -569,13 +742,26 @@ func validateDeviceIDRequest(request DeviceIDRequest) error {
 		)
 	}
 	if request.access == DeviceIDIndividual {
-		if request.continuation {
+		if request.continuation || request.extended || request.wrapped {
 			return protocolError(
 				ErrorInvalidRequest,
 				FunctionEncapsulatedInterface,
 				0,
 				"individual_continuation",
 				-1,
+			)
+		}
+		return nil
+	}
+	if request.extended {
+		if request.access != DeviceIDExtended ||
+			(!request.continuation && request.wrapped) {
+			return protocolError(
+				ErrorInvalidRequest,
+				FunctionEncapsulatedInterface,
+				0,
+				"extended_stream_cursor",
+				3,
 			)
 		}
 		return nil

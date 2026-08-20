@@ -41,12 +41,12 @@ func TestEncodeTCPDeviceIDAccessADU(t *testing.T) {
 	}
 }
 
-func TestTCPOutboundRejectsBroadcastReservedAndZeroRequests(t *testing.T) {
+func TestTCPOutboundRejectsReservedUnitsAndInvalidRequests(t *testing.T) {
 	read, err := NewReadRegistersRequest(FunctionReadInputRegisters, 0, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, unitID := range []byte{0, 248, 255} {
+	for _, unitID := range []byte{248, 255} {
 		_, err := EncodeTCPReadADU(1, unitID, read)
 		_ = requireProtocolError(t, err, ErrorInvalidRequest)
 	}
@@ -56,6 +56,37 @@ func TestTCPOutboundRejectsBroadcastReservedAndZeroRequests(t *testing.T) {
 	var zeroDevice DeviceIDRequest
 	_, err = EncodeTCPDeviceIDAccessADU(1, 1, zeroDevice)
 	_ = requireProtocolError(t, err, ErrorInvalidRequest)
+}
+
+func TestTCPUnitZeroIntentAndADUStayTCPOnly(t *testing.T) {
+	read, err := NewReadRegistersRequest(FunctionReadHoldingRegisters, 0, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	adu, err := EncodeTCPReadADU(7, 0, read)
+	if err != nil || adu[6] != 0 {
+		t.Fatalf("TCP unit-zero ADU=%x err=%v", adu, err)
+	}
+	spec := ReadIntentSpec{
+		LogicalViewID: 1, Endpoint: "tcp://192.0.2.10:502", Transport: TransportTCP,
+		TransportGeneration: 1, UnitID: 0, AuthorizationScope: "unit-zero",
+		PollGeneration: 1, DeadlineIdentity: 1, Request: read,
+	}
+	if _, err := NewReadIntent(spec); err != nil {
+		t.Fatal(err)
+	}
+	spec.Transport = TransportRTU
+	if _, err := NewReadIntent(spec); err == nil {
+		t.Fatal("RTU unit-zero response-bearing intent accepted")
+	}
+	if _, err := EncodeRTUReadADU(0, read); err == nil {
+		t.Fatal("RTU unit-zero read encoded")
+	}
+	for _, unitID := range []byte{248, 255} {
+		if _, err := EncodeTCPReadADU(1, unitID, read); err == nil {
+			t.Fatalf("reserved TCP unit %d accepted", unitID)
+		}
+	}
 }
 
 func TestTCPStreamDecoderHandlesFragmentationAndMultipleADUs(t *testing.T) {

@@ -178,7 +178,6 @@ func (scheduler *EndpointScheduler) Enqueue(request ScheduledRequest) error {
 func validScheduledRequest(request ScheduledRequest) bool {
 	return request.RequestID != 0 &&
 		request.Key.AuthorizationScope != "" &&
-		request.Key.UnitID != 0 &&
 		request.Key.UnitID <= 247 &&
 		request.DeadlineOffset > 0
 }

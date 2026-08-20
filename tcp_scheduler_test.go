@@ -260,6 +260,24 @@ func TestSchedulerIsScopeThenUnitRoundRobinAndFIFOWithinKey(t *testing.T) {
 	}
 }
 
+func TestSchedulerKeepsTCPUnitZeroAndUnitOneAdmissionKeysDistinct(t *testing.T) {
+	scheduler := testScheduler(t)
+	if err := scheduler.Enqueue(scheduledRequest(1, "site", 0, 100)); err != nil {
+		t.Fatal(err)
+	}
+	if err := scheduler.Enqueue(scheduledRequest(2, "site", 1, 100)); err != nil {
+		t.Fatal(err)
+	}
+	first, ok := scheduler.Dispatch(0)
+	if !ok || first.Key.UnitID != 0 {
+		t.Fatalf("first dispatch=%#v ok=%v", first, ok)
+	}
+	second, ok := scheduler.Dispatch(0)
+	if !ok || second.Key.UnitID != 1 {
+		t.Fatalf("second dispatch=%#v ok=%v", second, ok)
+	}
+}
+
 func TestSchedulerSkipsExpirySupportsCancellationAndRetriesAtTail(t *testing.T) {
 	scheduler := testScheduler(t)
 	if err := scheduler.Enqueue(scheduledRequest(1, "a", 1, 5)); err != nil {

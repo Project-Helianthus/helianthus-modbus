@@ -69,7 +69,7 @@ func encodeTCPADU(
 	unitID byte,
 	pdu []byte,
 ) ([]byte, error) {
-	if unitID == 0 || unitID > 247 {
+	if unitID > 247 {
 		return nil, protocolError(
 			ErrorInvalidRequest,
 			0,

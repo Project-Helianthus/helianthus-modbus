@@ -25,6 +25,15 @@ constructed independently by package consumers. Device Identification
 traversal is bounded, preserves exact per-segment provenance, and publishes
 only a complete validated aggregate.
 
+Modbus TCP accepts unit identifier `0` as a response-bearing server identity;
+it remains a distinct scheduler, coalescing, correlation, and provenance key.
+RTU keeps unit `0` reserved for broadcast and rejects it for every read. The
+standard Device Identification traversal still starts at object `0` and
+requires its mandatory basic objects. `NewExtendedDeviceIDStreamRequest` is a
+separate code-03 primitive for documented arbitrary-start object streams; it
+permits one `0xff` to `0x00` cursor wrap, rejects loops and duplicate objects,
+and publishes no partial aggregate.
+
 `NewRuntimeAcquisitionSource` provides the optional bounded trust root for
 successful TCP logical views. A configured endpoint marks only correlated,
 coherent, still-attached `successful_data` views as eligible. The source binds

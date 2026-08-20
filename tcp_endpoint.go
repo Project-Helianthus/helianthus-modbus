@@ -819,7 +819,6 @@ func (endpoint *TCPEndpoint) EnqueueRead(
 	connection, ok := endpoint.connectionLocked(plan.Connection)
 	if !ok ||
 		endpoint.closed ||
-		plan.UnitID == 0 ||
 		plan.UnitID > 247 ||
 		plan.AuthorizationScope == "" ||
 		plan.PollGeneration == 0 ||
@@ -1012,7 +1011,6 @@ func (endpoint *TCPEndpoint) EnqueueDeviceID(
 	connection, ok := endpoint.connectionLocked(plan.Connection)
 	if !ok ||
 		endpoint.closed ||
-		plan.UnitID == 0 ||
 		plan.UnitID > 247 ||
 		plan.AuthorizationScope == "" ||
 		plan.PollGeneration == 0 ||
@@ -1659,6 +1657,12 @@ func (endpoint *TCPEndpoint) acceptDeviceIDResponse(
 			Objects:    segment.Objects(),
 			Segments:   append([]DeviceIDSegment(nil), segment),
 		}
+	} else if request.deviceIDInitial.extended {
+		result, err = AggregateExtendedDeviceIDStream(
+			request.deviceIDInitial,
+			request.deviceIDSegments,
+			request.deviceIDLimits,
+		)
 	} else {
 		result, err = AggregateDeviceID(
 			request.deviceIDInitial,

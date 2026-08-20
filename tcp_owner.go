@@ -385,7 +385,7 @@ func (owner *TCPConnectionOwner) reserve(
 			-1,
 		)
 	}
-	if unitID == 0 || unitID > 247 {
+	if unitID > 247 {
 		return TCPReservation{}, protocolError(
 			ErrorInvalidRequest,
 			0,

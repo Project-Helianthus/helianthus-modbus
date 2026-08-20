@@ -175,7 +175,7 @@
       "tests": [
         "TestTCPEndpointPublicSurfaceHasNoLowLevelConstructorBypass",
         "TestTCPEndpointPublicSurfaceScannerRejectsFactoryAliases",
-        "TestTCPOutboundRejectsBroadcastReservedAndZeroRequests"
+        "TestTCPOutboundRejectsReservedUnitsAndInvalidRequests"
       ]
     }
   ],
@@ -213,14 +213,14 @@
     }
   },
   "test_file_sha256": {
-    "device_id_test.go": "efa5707a2a2357bdda1aa0dd1a642f2ed77fbf97603243474bfc693e4be679e0",
+    "device_id_test.go": "250fd27cc75f600a45abfc3cff6f210f3fb441c8e974c8d2baa07ca8da283ba0",
     "pdu_test.go": "56a970af945842aaa570232d7bfa196ac90619a5cf6589263a5c7481040b1f23",
-    "tcp_adu_test.go": "f412ee8bfa2d2b352485d55291991e2dcbf100dcaf6292f5b61a4f0c1a8de701",
-    "tcp_coalescing_test.go": "e00274ac79a7a6c354b6d2c2aacc4fa0435507561063c34155b4bfbfd0f26415",
-    "tcp_endpoint_test.go": "3e373653cf4a1fb17a5a0abc19cc58bf959f4bc1e0dcb3f29fbdca72ca78d839",
+    "tcp_adu_test.go": "ebd3237e0b6c54dbbeebe659fcd26eb984c2ddb3622ca292ca052c1968bd3407",
+    "tcp_coalescing_test.go": "29dfffdf966b602569805f4feaa9c11b3894c9161da9a08b4db6e09b10813db6",
+    "tcp_endpoint_test.go": "2c60cc1b82ba721b1ebdd00f3f0ea2eb8a254e8ca9bba0747a8aed9e0335ce23",
     "tcp_owner_test.go": "cd3d6e2c5a3742844f449df1615ef88611353249def1d99fd550567d834e943a",
     "tcp_pool_test.go": "c855455fdb7a3dc9c186d7e14592385d598f40cf8f699ecb8af518ed07824879",
-    "tcp_scheduler_test.go": "52a3715e2a9e0f47ea583a123d6e1bb7659ccf239e3b3197a160743a5a7bea2d",
+    "tcp_scheduler_test.go": "a268e76ef738090df3c72c1f3d1a51548542cc3533664e26f477be7f0247d7ee",
     "tcp_transport_test.go": "0f30dea46dc3101f8af47bbb83c704c7a2799fd124c2c0be34045aae29111f33"
   }
 }

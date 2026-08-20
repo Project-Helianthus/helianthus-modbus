@@ -42,8 +42,8 @@ func NewReadIntent(spec ReadIntentSpec) (ReadIntent, error) {
 		spec.Endpoint == "" ||
 		(spec.Transport != TransportTCP && spec.Transport != TransportRTU) ||
 		spec.TransportGeneration == 0 ||
-		spec.UnitID == 0 ||
 		spec.UnitID > 247 ||
+		(spec.UnitID == 0 && spec.Transport != TransportTCP) ||
 		spec.AuthorizationScope == "" ||
 		spec.PollGeneration == 0 ||
 		spec.DeadlineIdentity == 0 {

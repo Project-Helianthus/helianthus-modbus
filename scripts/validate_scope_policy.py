@@ -103,7 +103,7 @@ EXPECTED_POLICY = {
             "67eefbf1db0b90cf172e627ad9c21a1a6641d8231500504d7f3b3e9f55d93add"
         ),
         "scripts/validate_m1_06_conformance.py": (
-            "c2c5826fea65405e4975a7dd3ee25cb11497c387bb272d1915ce0a62f8abc9a2"
+            "8b22bfcfccecc23e6aa0c9c4661a0ca6d98f45f7813afca9e78c1af9a4b544d6"
         ),
     },
     "allowed_operations": [

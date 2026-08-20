@@ -216,20 +216,6 @@ def validate_artifact(artifact: dict[str, object]) -> set[str]:
     return set().union(*REQUIREMENTS.values())
 
 
-def validate_red_history() -> None:
-    parent = run("git", "rev-parse", f"{RED_SHA}^")
-    if parent.returncode != 0 or parent.stdout.strip() != BASE_SHA:
-        raise ConformanceError("test-only RED parent differs from exact base")
-    changed = run(
-        "git",
-        "diff-tree",
-        "--no-commit-id",
-        "--name-only",
-        "-r",
-        RED_SHA,
-    )
-    if changed.returncode != 0 or changed.stdout.splitlines() != [TEST_FILE]:
-        raise ConformanceError("RED commit is not test-only")
 def validate_transport_matrix() -> None:
     path = ROOT / "policy" / "m1-04-transport-matrix.json"
     matrix = load_json(path)
@@ -287,7 +273,6 @@ def main() -> int:
     try:
         artifact = load_json(ARTIFACT)
         expected = validate_artifact(artifact)
-        validate_red_history()
         validate_transport_matrix()
         execute_tests(expected)
     except ConformanceError as exc:

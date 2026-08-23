@@ -206,6 +206,32 @@ func TestRTUSessionRecoveryRequiresMonotonicQuietProof(t *testing.T) {
 	}
 }
 
+func TestRTUSessionRecoveryWaitsResponseHorizonBeforeQuietProof(t *testing.T) {
+	timing := rtuTestTiming(t, 115200)
+	stream := newRTUSessionFakeStream(
+		rtuSessionGap(timing.InterFrame() + 1),
+		rtuSessionGap(timing.MaxResponseLatency() + timing.InterFrame() + 1),
+	)
+	stream.writeN = 1
+	stream.writeErr = io.ErrUnexpectedEOF
+	session, err := NewRTUSession(RTUSessionConfig{
+		Stream: stream, Timing: timing, Enabled: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := newSessionPrivateFunctionRequest(t, 0x65, nil)
+	if _, err := session.Exchange(context.Background(), 0x10, request, DefaultPrivateFunctionResponsePolicy()); err == nil {
+		t.Fatal("partial write accepted")
+	}
+	if err := session.Recover(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := stream.RTUOffset(), timing.MaxResponseLatency()+timing.InterFrame(); got < want {
+		t.Fatalf("recovery offset = %s, want at least %s", got, want)
+	}
+}
+
 type rtuSessionAction struct {
 	value  byte
 	offset time.Duration

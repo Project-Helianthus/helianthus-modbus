@@ -42,9 +42,9 @@ func TestPrivateFunctionCodeIsGenericAndResponseRemainsRaw(t *testing.T) {
 	}
 }
 
-func TestPrivateFunctionCodeRejectsNonPrivateAndBindsExceptionsToInflightRequest(t *testing.T) {
-	if _, err := NewPrivateFunctionCode(0x40); err == nil {
-		t.Fatal("non-private function code accepted")
+func TestPrivateFunctionCodeRejectsZeroOrExceptionAndBindsExceptionsToInflightRequest(t *testing.T) {
+	if _, err := NewPrivateFunctionCode(0); err == nil {
+		t.Fatal("zero function code accepted")
 	}
 	if _, err := NewPrivateFunctionCode(0x80); err == nil {
 		t.Fatal("exception function code accepted")

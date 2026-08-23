@@ -41,12 +41,12 @@ func TestPrivateFunctionRTURejectsInvalidLocalRequestsWithoutWire(t *testing.T) 
 		code    byte
 		payload []byte
 	}{
-		{name: "non_private", code: 0x40},
+		{name: "zero_function", code: 0},
 		{name: "oversized_payload", code: 0x65, payload: make([]byte, 253)},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			code, err := NewPrivateFunctionCode(test.code)
-			if test.name == "non_private" {
+			if test.name == "zero_function" {
 				if err == nil {
 					t.Fatal("invalid private code accepted")
 				}

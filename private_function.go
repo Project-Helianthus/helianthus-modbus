@@ -5,11 +5,6 @@ import (
 	"sync"
 )
 
-const (
-	firstPrivateFunctionCode = 0x41
-	lastPrivateFunctionCode  = 0x7f
-)
-
 // PrivateFunctionCode is a transport-level private function-code value. It
 // deliberately has no vendor, codec, or operation identity.
 type PrivateFunctionCode byte
@@ -18,7 +13,7 @@ type PrivateFunctionCode byte
 // Codec selection belongs to the caller's endpoint-scoped registry, never to
 // this transport package.
 func NewPrivateFunctionCode(value byte) (PrivateFunctionCode, error) {
-	if value < firstPrivateFunctionCode || value > lastPrivateFunctionCode {
+	if value == 0 || value&0x80 != 0 {
 		return 0, protocolError(
 			ErrorUnsupportedOperation,
 			FunctionCode(value),

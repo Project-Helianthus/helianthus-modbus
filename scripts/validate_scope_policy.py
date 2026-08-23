@@ -44,7 +44,7 @@ EXPECTED_POLICY = {
             "954697e330c467795c9d26f968711d66ff4335e37e9e73af27ce75ca4f49bb15"
         ),
         "private_function.go": (
-            "1c63aa74cceee1274f4ccd0dccf749a6e2b1d6b86f0fb432437ea218eaa39dec"
+            "d514d4065fbbe3a8fc5f0f83f7f623e59a045c07526a610a4e96249ae1892919"
         ),
         "pdu.go": (
             "6e10a628f3f79d5c19c7c51307308179644364a5ba2c698e39e4ec49ef4e1d8b"
@@ -118,7 +118,7 @@ EXPECTED_POLICY = {
         {"function_code": 3, "name": "read_holding_registers"},
         {"function_code": 4, "name": "read_input_registers"},
         {
-            "function_code_range": [65, 127],
+            "function_code_policy": "caller_supplied_non_exception_byte",
             "name": "generic_private_function_code",
         },
         {

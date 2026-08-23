@@ -134,10 +134,12 @@ func main() {
 					}
 					if identifier, ok := value.Fun.(*ast.Ident); ok &&
 						identifier.Name == "encodeTCPADU" {
-						if base != "tcp_adu.go" ||
-							(function.Name.Name != "EncodeTCPReadADU" &&
-								function.Name.Name !=
-									"EncodeTCPDeviceIDAccessADU") {
+						allowed := (base == "tcp_adu.go" &&
+							(function.Name.Name == "EncodeTCPReadADU" ||
+								function.Name.Name == "EncodeTCPDeviceIDAccessADU")) ||
+							(base == "private_function.go" &&
+								function.Name.Name == "EncodeTCPPrivateFunctionADU")
+						if !allowed {
 							fail(
 								"%s: raw TCP encoder called from %s",
 								location(fset, value),
@@ -210,8 +212,8 @@ func main() {
 	if !equalCounts(aduTraceCalls, expectedADUTraceCalls) {
 		fail("encoded ADU trace dataflow changed: %v", aduTraceCalls)
 	}
-	if rawEncoderCalls != 2 {
-		fail("expected two typed raw TCP encoder calls, found %d", rawEncoderCalls)
+	if rawEncoderCalls != 3 {
+		fail("expected three bounded raw TCP encoder calls, found %d", rawEncoderCalls)
 	}
 	fmt.Println("Read-only AST surface passed.")
 }

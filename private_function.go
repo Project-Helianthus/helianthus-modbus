@@ -95,6 +95,20 @@ func EncodeRTUPrivateFunctionADU(
 	return encodeRTUADU(unitID, pdu)
 }
 
+// EncodeTCPPrivateFunctionADU encodes one bounded generic private-function
+// MBAP request. It assigns no vendor or codec behavior.
+func EncodeTCPPrivateFunctionADU(
+	transactionID uint16,
+	unitID byte,
+	request PrivateFunctionRequest,
+) ([]byte, error) {
+	pdu, err := request.EncodePDU()
+	if err != nil {
+		return nil, err
+	}
+	return encodeTCPADU(transactionID, unitID, pdu)
+}
+
 // RTUPrivateFunctionResponseADU retains an exact raw normal response and
 // validated framing. A registry-selected codec alone may decode its payload.
 type RTUPrivateFunctionResponseADU struct {
@@ -109,6 +123,23 @@ func (response RTUPrivateFunctionResponseADU) Bytes() []byte {
 
 // Payload returns an independent copy of raw normal-response payload bytes.
 func (response RTUPrivateFunctionResponseADU) Payload() []byte {
+	return cloneBytes(response.payload)
+}
+
+// TCPPrivateFunctionResponseADU retains an exact raw normal MBAP response.
+// A registry-selected codec alone may decode its payload.
+type TCPPrivateFunctionResponseADU struct {
+	adu     TCPADU
+	payload []byte
+}
+
+// Bytes returns an independent copy of the complete MBAP response frame.
+func (response TCPPrivateFunctionResponseADU) Bytes() []byte {
+	return response.adu.Bytes()
+}
+
+// Payload returns an independent copy of raw normal-response payload bytes.
+func (response TCPPrivateFunctionResponseADU) Payload() []byte {
 	return cloneBytes(response.payload)
 }
 
@@ -182,6 +213,110 @@ func DecodeRTUPrivateFunctionResponseADU(
 			received,
 			"function_mismatch",
 			0,
+		)
+	}
+	response.payload = cloneBytes(adu.pdu[1:])
+	return response, nil
+}
+
+// DecodeTCPPrivateFunctionResponseADU validates one exact MBAP frame against
+// the in-flight transaction, unit, and private function code. It returns raw
+// normal payload bytes or the generic exception error without vendor decoding.
+func DecodeTCPPrivateFunctionResponseADU(
+	expectedTransactionID uint16,
+	expectedUnitID byte,
+	request PrivateFunctionRequest,
+	frame []byte,
+) (TCPPrivateFunctionResponseADU, error) {
+	if expectedUnitID > 247 {
+		return TCPPrivateFunctionResponseADU{}, protocolError(
+			ErrorInvalidRequest,
+			FunctionCode(request.function),
+			0,
+			"unit_id",
+			6,
+		)
+	}
+	if _, err := NewPrivateFunctionRequest(request.function, request.payload); err != nil {
+		return TCPPrivateFunctionResponseADU{}, err
+	}
+	decoder, err := NewTCPStreamDecoder(maxTCPADUSize)
+	if err != nil {
+		return TCPPrivateFunctionResponseADU{}, err
+	}
+	frames, err := decoder.Feed(frame)
+	if err != nil {
+		return TCPPrivateFunctionResponseADU{}, err
+	}
+	if err := decoder.Finish(); err != nil {
+		return TCPPrivateFunctionResponseADU{}, err
+	}
+	if len(frames) != 1 {
+		return TCPPrivateFunctionResponseADU{}, protocolError(
+			ErrorMalformedResponse,
+			FunctionCode(request.function),
+			0,
+			"tcp_adu_count",
+			len(frames),
+		)
+	}
+	adu := frames[0]
+	response := TCPPrivateFunctionResponseADU{adu: adu}
+	if adu.transactionID != expectedTransactionID {
+		return response, protocolError(
+			ErrorMalformedResponse,
+			FunctionCode(request.function),
+			0,
+			"transaction_id",
+			0,
+		)
+	}
+	if adu.unitID != expectedUnitID {
+		return response, protocolError(
+			ErrorMalformedResponse,
+			FunctionCode(request.function),
+			0,
+			"unit_id",
+			6,
+		)
+	}
+	if len(adu.pdu) == 0 {
+		return response, protocolError(
+			ErrorMalformedResponse,
+			FunctionCode(request.function),
+			0,
+			"function",
+			7,
+		)
+	}
+	received := FunctionCode(adu.pdu[0])
+	if received == FunctionCode(byte(request.function)|0x80) {
+		if len(adu.pdu) != 2 {
+			return response, protocolError(
+				ErrorMalformedResponse,
+				FunctionCode(request.function),
+				received,
+				"exception_length",
+				len(adu.pdu),
+			)
+		}
+		exception := protocolError(
+			ErrorExceptionResponse,
+			FunctionCode(request.function),
+			received,
+			"exception_code",
+			8,
+		)
+		exception.ExceptionCode = adu.pdu[1]
+		return response, exception
+	}
+	if received != FunctionCode(request.function) {
+		return response, protocolError(
+			ErrorMalformedResponse,
+			FunctionCode(request.function),
+			received,
+			"function_mismatch",
+			7,
 		)
 	}
 	response.payload = cloneBytes(adu.pdu[1:])

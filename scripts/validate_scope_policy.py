@@ -44,7 +44,7 @@ EXPECTED_POLICY = {
             "954697e330c467795c9d26f968711d66ff4335e37e9e73af27ce75ca4f49bb15"
         ),
         "private_function.go": (
-            "8f7a69e3423fc0adfb384ecbf9e8d9022f0b4a42bf8f81e74666b6296812a82c"
+            "1c63aa74cceee1274f4ccd0dccf749a6e2b1d6b86f0fb432437ea218eaa39dec"
         ),
         "pdu.go": (
             "6e10a628f3f79d5c19c7c51307308179644364a5ba2c698e39e4ec49ef4e1d8b"
@@ -97,7 +97,7 @@ EXPECTED_POLICY = {
             "903cfc5df5569c316186032ab2da644dcb664a51548b064e3d3e67c945b96880"
         ),
         "scripts/read_only_surface/main.go": (
-            "d87d51b240cbf80605b7c939acde62f4c5d7bc92fac63bdf0ea67d527f7c3980"
+            "f187a24c36adef884b12b9155a8a3ee9b3f3dd0b8f43401cf52064181ae29420"
         ),
     },
     "trusted_python_tool_sha256": {
@@ -239,6 +239,7 @@ def validate_read_only_wire_surface(root: Path) -> None:
         if re.search(r"\bencodeTCPADU\s*\(", line)
     ]
     if raw_encoder_sites != [
+        ("private_function.go", "return encodeTCPADU(transactionID, unitID, pdu)"),
         ("tcp_adu.go", "return encodeTCPADU(transactionID, unitID, pdu)"),
         ("tcp_adu.go", "return encodeTCPADU(transactionID, unitID, pdu)"),
         ("tcp_adu.go", "func encodeTCPADU("),
@@ -296,8 +297,11 @@ def validate_read_only_wire_surface(root: Path) -> None:
         "private_function.go": [
             "Begin",
             "Bytes",
+            "Bytes",
             "EncodePDU",
             "EncodeRTUPrivateFunctionADU",
+            "EncodeTCPPrivateFunctionADU",
+            "Payload",
             "Payload",
             "Payload",
         ],

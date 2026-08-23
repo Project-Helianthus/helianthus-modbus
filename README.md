@@ -89,16 +89,26 @@ milestone.
 
 ## Phase-One Boundary
 
-Phase one is read-only. Its complete implemented PDU operation allowlist is:
+Phase one is read-only at the composed endpoint boundary. Its complete
+implemented standard-PDU operation allowlist is:
 
 - FC03, Read Holding Registers;
 - FC04, Read Input Registers;
 - FC2B/MEI type 0x0E, Read Device Identification.
 
-This list is both the implemented PDU boundary and the ceiling for later
-phase-one transports. There is no generic function-code escape hatch and no
-write PDU, probe, or control API. Write support requires separate safety work
-and action-time confirmation before any live mutation.
+This list is the standard-PDU boundary for phase one. The package also carries
+bounded, raw private-function PDUs for a registry-selected codec. Their
+function-code byte and payload have no vendor, operation, or write/read
+meaning in this repository; normal-response payloads remain raw and exception
+frames bind only to the in-flight request. The transport has no global
+function-code-to-vendor map or allowlist.
+
+Private-function framing is not a live operation-admission API. Composition
+must first select exactly one qualified profile for an endpoint and unit, then
+allow only that profile's explicitly read-only operation to construct a raw
+request. Missing, ambiguous, mismatched, or non-read-only profile admission is
+`no-send`. Standard write PDU support remains out of scope and requires
+separate safety work and action-time confirmation before any live mutation.
 
 M1-02 owns the aggregate FC03/FC04 endpoint. M1-04 owns bounded FC2B/MEI type
 0x0E endpoint execution without exposing a lower-level socket bypass.

@@ -1,10 +1,11 @@
 {
   "schema": "helianthus-modbus-boundary/v1",
   "mode": "read_only",
-  "implementation_lock": "m1_protocol",
+  "implementation_lock": "m1_vendor_opaque_protocol",
   "allowed_product_go_files": [
     "device_id.go",
     "doc.go",
+    "opaque_rtu.go",
     "pdu.go",
     "rtu_adu.go",
     "rtu_capability.go",
@@ -23,6 +24,7 @@
   "allowed_product_go_sha256": {
     "device_id.go": "2897dee6ab1917b0267de94aefc2d018c9ba803ec3f42a11143fc914caa865e5",
     "doc.go": "ebf7602eea88e91db901ee5e250bcf3fbb35f4babf9c548a43876071a4b7ea77",
+    "opaque_rtu.go": "0228fae2eab804b54aa88b727e211939b894f16a2328adca9d6ec17990602c02",
     "pdu.go": "6e10a628f3f79d5c19c7c51307308179644364a5ba2c698e39e4ec49ef4e1d8b",
     "rtu_adu.go": "2aede649a154c135a1da2c3b78f9a6fad2c6c814db6fb56c31efdbdb61b79001",
     "rtu_capability.go": "33f8427bccd92b337afe1c8947ed2809f0262db7e3a9697629ef593a6ab2b010",
@@ -44,7 +46,7 @@
   },
   "trusted_python_tool_sha256": {
     "scripts/validate_m1_02_acceptance.py": "f64e579546bb49c22cdc092cae63d297d846e7e0d31aa46a91bddacc20b69092",
-    "scripts/validate_m1_03_acceptance.py": "0a1b91929befbbc87da58c29e40959e7b8be86718232bfdeb5000c7c22b928be",
+    "scripts/validate_m1_03_acceptance.py": "0df1e3344f743d6a8f2a4bea490f37cf9af6ffa50f2e1bdc3e278b8acfc3dc48",
     "scripts/validate_m1_04_acceptance.py": "67eefbf1db0b90cf172e627ad9c21a1a6641d8231500504d7f3b3e9f55d93add",
     "scripts/validate_m1_06_conformance.py": "8b22bfcfccecc23e6aa0c9c4661a0ca6d98f45f7813afca9e78c1af9a4b544d6"
   },
@@ -56,6 +58,18 @@
     {
       "function_code": 4,
       "name": "read_input_registers"
+    },
+    {
+      "function_code": 100,
+      "name": "opaque_vendor_100"
+    },
+    {
+      "function_code": 101,
+      "name": "opaque_vendor_101"
+    },
+    {
+      "function_code": 102,
+      "name": "opaque_vendor_102"
     },
     {
       "function_code": 43,

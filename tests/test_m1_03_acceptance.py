@@ -110,7 +110,7 @@ class M103AcceptanceTests(unittest.TestCase):
                     },
                 )
 
-    def test_compiled_inventory_rejects_extra_test_and_non_go_sources(
+    def test_compiled_inventory_allows_additive_tests_and_rejects_non_go_sources(
         self,
     ) -> None:
         policy = json.loads(
@@ -124,8 +124,7 @@ class M103AcceptanceTests(unittest.TestCase):
         }
         validator.validate_compiled_inventory(package, policy)
         package["TestGoFiles"].append("m1_03_extra_test.go")
-        with self.assertRaises(validator.AcceptanceError):
-            validator.validate_compiled_inventory(package, policy)
+        validator.validate_compiled_inventory(package, policy)
         package["TestGoFiles"].pop()
         package["SFiles"] = ["unlocked_amd64.s"]
         with self.assertRaises(validator.AcceptanceError):

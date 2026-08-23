@@ -15,10 +15,11 @@ from typing import Iterable
 EXPECTED_POLICY = {
     "schema": "helianthus-modbus-boundary/v1",
     "mode": "read_only",
-    "implementation_lock": "m1_protocol",
+    "implementation_lock": "m1_vendor_opaque_protocol",
     "allowed_product_go_files": [
         "device_id.go",
         "doc.go",
+        "opaque_rtu.go",
         "pdu.go",
         "rtu_adu.go",
         "rtu_capability.go",
@@ -40,6 +41,9 @@ EXPECTED_POLICY = {
         ),
         "doc.go": (
             "ebf7602eea88e91db901ee5e250bcf3fbb35f4babf9c548a43876071a4b7ea77"
+        ),
+        "opaque_rtu.go": (
+            "0228fae2eab804b54aa88b727e211939b894f16a2328adca9d6ec17990602c02"
         ),
         "pdu.go": (
             "6e10a628f3f79d5c19c7c51307308179644364a5ba2c698e39e4ec49ef4e1d8b"
@@ -97,7 +101,7 @@ EXPECTED_POLICY = {
             "f64e579546bb49c22cdc092cae63d297d846e7e0d31aa46a91bddacc20b69092"
         ),
         "scripts/validate_m1_03_acceptance.py": (
-            "0a1b91929befbbc87da58c29e40959e7b8be86718232bfdeb5000c7c22b928be"
+            "0df1e3344f743d6a8f2a4bea490f37cf9af6ffa50f2e1bdc3e278b8acfc3dc48"
         ),
         "scripts/validate_m1_04_acceptance.py": (
             "67eefbf1db0b90cf172e627ad9c21a1a6641d8231500504d7f3b3e9f55d93add"
@@ -109,6 +113,9 @@ EXPECTED_POLICY = {
     "allowed_operations": [
         {"function_code": 3, "name": "read_holding_registers"},
         {"function_code": 4, "name": "read_input_registers"},
+        {"function_code": 100, "name": "opaque_vendor_100"},
+        {"function_code": 101, "name": "opaque_vendor_101"},
+        {"function_code": 102, "name": "opaque_vendor_102"},
         {
             "function_code": 43,
             "mei_type": 14,
@@ -242,6 +249,7 @@ def validate_read_only_wire_surface(root: Path) -> None:
         if re.search(r"\bencodeRTUADU\s*\(", line)
     ]
     if raw_rtu_encoder_sites != [
+        ("opaque_rtu.go", "return encodeRTUADU(unitID, pdu)"),
         ("rtu_adu.go", "return encodeRTUADU(unitID, pdu)"),
         ("rtu_adu.go", "return encodeRTUADU(unitID, pdu)"),
         ("rtu_adu.go", "func encodeRTUADU(unitID byte, pdu []byte) ([]byte, error) {"),
@@ -262,6 +270,9 @@ def validate_read_only_wire_surface(root: Path) -> None:
     expected_codes = {
         "FunctionReadHoldingRegisters": 3,
         "FunctionReadInputRegisters": 4,
+        "FunctionVendor100": 100,
+        "FunctionVendor101": 101,
+        "FunctionVendor102": 102,
         "FunctionEncapsulatedInterface": 43,
     }
     if function_codes != expected_codes:
@@ -280,6 +291,14 @@ def validate_read_only_wire_surface(root: Path) -> None:
     expected_byte_apis = {
         "device_id.go": ["EncodePDU"],
         "pdu.go": ["EncodePDU"],
+        "opaque_rtu.go": [
+            "Begin",
+            "Bytes",
+            "EncodePDU",
+            "EncodeRTUOpaqueADU",
+            "Payload",
+            "Payload",
+        ],
         "rtu_adu.go": [
             "Bytes",
             "Bytes",
@@ -332,8 +351,8 @@ def validate_read_only_wire_surface(root: Path) -> None:
 
 
 def validate_product_lock(root: Path, policy: dict[str, object]) -> None:
-    if policy["implementation_lock"] != "m1_protocol":
-        raise PolicyError("implementation lock must remain m1_protocol")
+    if policy["implementation_lock"] != "m1_vendor_opaque_protocol":
+        raise PolicyError("implementation lock must remain m1_vendor_opaque_protocol")
     allowed = {str(item) for item in policy["allowed_product_go_files"]}
     actual = {
         path.relative_to(root).as_posix()

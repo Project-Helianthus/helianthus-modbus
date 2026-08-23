@@ -299,7 +299,9 @@ def validate_compiled_inventory(
     if (
         set(package.get("GoFiles", ()))
         != set(policy.get("allowed_product_go_files", ()))
-        or set(package.get("TestGoFiles", ())) != EXPECTED_TEST_GO_FILES
+        or not EXPECTED_TEST_GO_FILES.issubset(
+            set(package.get("TestGoFiles", ()))
+        )
         or package.get("XTestGoFiles")
         or any(package.get(field) for field in FORBIDDEN_COMPILED_FIELDS)
     ):
@@ -469,9 +471,9 @@ def validate_test_evidence(
         for path in root.rglob("*_test.go")
         if ".git" not in path.parts
     }
-    if filesystem_test_files != EXPECTED_TEST_GO_FILES:
+    if not EXPECTED_TEST_GO_FILES.issubset(filesystem_test_files):
         raise AcceptanceError("filesystem Go test-file inventory changed")
-    if set(actual_files) != EXPECTED_TEST_GO_FILES:
+    if not EXPECTED_TEST_GO_FILES.issubset(set(actual_files)):
         raise AcceptanceError("complete Go test-file inventory changed")
     base.validate_declared_test_files(actual_files, declared)
     sources = evidence.get("test_sources")

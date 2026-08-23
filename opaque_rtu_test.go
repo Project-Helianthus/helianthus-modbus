@@ -98,3 +98,52 @@ func TestOpaqueVendorRetryPolicyIsFailClosed(t *testing.T) {
 		t.Fatalf("policy = %#v", policy)
 	}
 }
+
+func TestOpaqueVendorTransactionDeliversMultipleFramesAndQuarantinesLateData(t *testing.T) {
+	request, err := NewOpaqueVendorRequest(FunctionVendor100, []byte{0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var transaction OpaqueVendorTransaction
+	if _, err := transaction.Begin(0x10, request); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transaction.Begin(0x10, request); err == nil {
+		t.Fatal("second outstanding transaction accepted")
+	}
+	echo := makeOpaqueRTUFrame(t, 0x10, FunctionVendor100, []byte{0})
+	if response, err := transaction.Accept(echo); err != nil || !bytes.Equal(response.Payload(), []byte{0}) {
+		t.Fatalf("echo = %#v, %v", response, err)
+	}
+	result := makeOpaqueRTUFrame(t, 0x10, FunctionVendor100, []byte{1, 2})
+	if response, err := transaction.Accept(result); err != nil || !bytes.Equal(response.Payload(), []byte{1, 2}) {
+		t.Fatalf("result = %#v, %v", response, err)
+	}
+	if err := transaction.Timeout(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transaction.Accept(result); err == nil {
+		t.Fatal("late response escaped quarantine")
+	}
+	if _, err := transaction.Begin(0x10, request); err == nil {
+		t.Fatal("request began before quarantine release")
+	}
+	if err := transaction.ReleaseQuarantine(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transaction.Begin(0x10, request); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func makeOpaqueRTUFrame(
+	t *testing.T,
+	unitID byte,
+	function FunctionCode,
+	payload []byte,
+) []byte {
+	t.Helper()
+	body := append([]byte{unitID, byte(function)}, payload...)
+	crc := rtuCRC16(body)
+	return append(body, byte(crc), byte(crc>>8))
+}

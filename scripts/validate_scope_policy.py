@@ -59,7 +59,7 @@ EXPECTED_POLICY = {
             "5ec493f52dc4d7058589542fb532232036d235182e5f19530732ecad2b51bb61"
         ),
         "rtu_session.go": (
-            "eb4230627a24acc6502f185f9e5a14a78142a6f0f976f7c8d4a4c1c13ac43e96"
+            "1621aba290efc6f701d660a00173f22a258fd63f5679748f0547fea50e469f74"
         ),
         "rtu_timing.go": (
             "daea0680aa70f1a552fc6facdd35e54161728c673625088c599951d560155231"

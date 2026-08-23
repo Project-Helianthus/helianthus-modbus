@@ -258,6 +258,9 @@ func (session *RTUSession) Recover(ctx context.Context) error {
 			if now < session.quarantineUntil {
 				continue
 			}
+			if now-session.quarantineUntil < session.timing.InterFrame() {
+				continue
+			}
 			session.quarantined = false
 			session.quarantineUntil = 0
 			return nil

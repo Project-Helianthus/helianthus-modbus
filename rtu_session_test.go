@@ -17,13 +17,10 @@ func TestRTUSessionIsSingleFlightAndDisabledUntilExplicitlyEnabled(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	request, err := NewOpaqueVendorRequest(FunctionVendor100, []byte{0})
-	if err != nil {
-		t.Fatal(err)
-	}
+	request := newSessionPrivateFunctionRequest(t, 0x64, []byte{0})
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	if _, err := session.Exchange(ctx, 0x10, request, DefaultOpaqueVendorRetryPolicy()); err == nil {
+	if _, err := session.Exchange(ctx, 0x10, request, DefaultPrivateFunctionResponsePolicy()); err == nil {
 		t.Fatal("empty fake response accepted")
 	}
 	if stream.writes != 1 {
@@ -34,7 +31,7 @@ func TestRTUSessionIsSingleFlightAndDisabledUntilExplicitlyEnabled(t *testing.T)
 	if err := session.Recover(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := session.Exchange(context.Background(), 0x10, request, DefaultOpaqueVendorRetryPolicy()); err == nil {
+	if _, err := session.Exchange(context.Background(), 0x10, request, DefaultPrivateFunctionResponsePolicy()); err == nil {
 		t.Fatal("empty successor response accepted")
 	}
 	if stream.writes != 2 {
@@ -52,11 +49,8 @@ func TestRTUSessionRetriesOnlyProvenZeroByteReplaySafeWrite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	request, err := NewOpaqueVendorRequest(FunctionVendor102, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	policy, err := NewOpaqueVendorRetryPolicy(2, true)
+	request := newSessionPrivateFunctionRequest(t, 0x66, nil)
+	policy, err := NewPrivateFunctionResponsePolicy(2, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,20 +68,17 @@ func TestRTUSessionSerializesConcurrentExchanges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	request, err := NewOpaqueVendorRequest(FunctionVendor100, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	request := newSessionPrivateFunctionRequest(t, 0x64, nil)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	finished := make(chan error, 2)
 	go func() {
-		_, err := session.Exchange(ctx, 0x10, request, DefaultOpaqueVendorRetryPolicy())
+		_, err := session.Exchange(ctx, 0x10, request, DefaultPrivateFunctionResponsePolicy())
 		finished <- err
 	}()
 	<-stream.writeStarted
 	go func() {
-		_, err := session.Exchange(ctx, 0x10, request, DefaultOpaqueVendorRetryPolicy())
+		_, err := session.Exchange(ctx, 0x10, request, DefaultPrivateFunctionResponsePolicy())
 		finished <- err
 	}()
 	time.Sleep(5 * time.Millisecond)
@@ -106,21 +97,19 @@ func TestRTUSessionSerializesConcurrentExchanges(t *testing.T) {
 }
 
 func TestRTUSessionRetainsMultipleOpaqueFramesUntilResponseBound(t *testing.T) {
-	request, err := NewOpaqueVendorRequest(FunctionVendor100, []byte{0})
-	if err != nil {
-		t.Fatal(err)
-	}
+	request := newSessionPrivateFunctionRequest(t, 0x64, []byte{0})
+	code := request.FunctionCode()
 	stream := newRTUSessionFakeStream(
-		rtuSessionBytes(makeOpaqueRTUFrame(t, 0x10, FunctionVendor100, []byte{0}), 0),
+		rtuSessionBytes(makePrivateFunctionRTUFrame(t, 0x10, code, []byte{0}), 0),
 		rtuSessionGap(3*time.Millisecond),
-		rtuSessionBytes(makeOpaqueRTUFrame(t, 0x10, FunctionVendor100, []byte{1, 2}), 4*time.Millisecond),
+		rtuSessionBytes(makePrivateFunctionRTUFrame(t, 0x10, code, []byte{1, 2}), 4*time.Millisecond),
 		rtuSessionGap(7*time.Millisecond),
 	)
 	session, err := NewRTUSession(RTUSessionConfig{Stream: stream, Timing: rtuTestTiming(t, 115200), Enabled: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	responses, err := session.Exchange(context.Background(), 0x10, request, DefaultOpaqueVendorRetryPolicy())
+	responses, err := session.Exchange(context.Background(), 0x10, request, DefaultPrivateFunctionResponsePolicy())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,14 +119,12 @@ func TestRTUSessionRetainsMultipleOpaqueFramesUntilResponseBound(t *testing.T) {
 }
 
 func TestRTUSessionQuarantinesResponseFrameOverflow(t *testing.T) {
-	request, err := NewOpaqueVendorRequest(FunctionVendor100, []byte{0})
-	if err != nil {
-		t.Fatal(err)
-	}
+	request := newSessionPrivateFunctionRequest(t, 0x64, []byte{0})
+	code := request.FunctionCode()
 	stream := newRTUSessionFakeStream(
-		rtuSessionBytes(makeOpaqueRTUFrame(t, 0x10, FunctionVendor100, []byte{0}), 0),
+		rtuSessionBytes(makePrivateFunctionRTUFrame(t, 0x10, code, []byte{0}), 0),
 		rtuSessionGap(3*time.Millisecond),
-		rtuSessionBytes(makeOpaqueRTUFrame(t, 0x10, FunctionVendor100, []byte{1}), 4*time.Millisecond),
+		rtuSessionBytes(makePrivateFunctionRTUFrame(t, 0x10, code, []byte{1}), 4*time.Millisecond),
 		rtuSessionGap(7*time.Millisecond),
 	)
 	session, err := NewRTUSession(RTUSessionConfig{
@@ -146,10 +133,10 @@ func TestRTUSessionQuarantinesResponseFrameOverflow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := session.Exchange(context.Background(), 0x10, request, DefaultOpaqueVendorRetryPolicy()); err == nil {
+	if _, err := session.Exchange(context.Background(), 0x10, request, DefaultPrivateFunctionResponsePolicy()); err == nil {
 		t.Fatal("response frame overflow accepted")
 	}
-	if _, err := session.Exchange(context.Background(), 0x10, request, DefaultOpaqueVendorRetryPolicy()); err == nil {
+	if _, err := session.Exchange(context.Background(), 0x10, request, DefaultPrivateFunctionResponsePolicy()); err == nil {
 		t.Fatal("overflow successor accepted")
 	}
 	if stream.writes != 1 {
@@ -166,7 +153,7 @@ func TestRTUSessionRejectsDisabledAndLocalFailuresWithoutWrite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := session.Exchange(context.Background(), 0, OpaqueVendorRequest{}, DefaultOpaqueVendorRetryPolicy()); err == nil {
+	if _, err := session.Exchange(context.Background(), 0, PrivateFunctionRequest{}, DefaultPrivateFunctionResponsePolicy()); err == nil {
 		t.Fatal("invalid local request accepted")
 	}
 	if stream.writes != 0 {
@@ -182,14 +169,11 @@ func TestRTUSessionPartialWriteQuarantinesSuccessor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	request, err := NewOpaqueVendorRequest(FunctionVendor101, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := session.Exchange(context.Background(), 0x10, request, DefaultOpaqueVendorRetryPolicy()); err == nil {
+	request := newSessionPrivateFunctionRequest(t, 0x65, nil)
+	if _, err := session.Exchange(context.Background(), 0x10, request, DefaultPrivateFunctionResponsePolicy()); err == nil {
 		t.Fatal("partial write accepted")
 	}
-	if _, err := session.Exchange(context.Background(), 0x10, request, DefaultOpaqueVendorRetryPolicy()); err == nil {
+	if _, err := session.Exchange(context.Background(), 0x10, request, DefaultPrivateFunctionResponsePolicy()); err == nil {
 		t.Fatal("quarantined successor accepted")
 	}
 	if stream.writes != 1 {
@@ -205,11 +189,8 @@ func TestRTUSessionRecoveryRequiresMonotonicQuietProof(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	request, err := NewOpaqueVendorRequest(FunctionVendor101, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := session.Exchange(context.Background(), 0x10, request, DefaultOpaqueVendorRetryPolicy()); err == nil {
+	request := newSessionPrivateFunctionRequest(t, 0x65, nil)
+	if _, err := session.Exchange(context.Background(), 0x10, request, DefaultPrivateFunctionResponsePolicy()); err == nil {
 		t.Fatal("partial write accepted")
 	}
 	if err := session.Recover(context.Background()); err == nil {
@@ -217,7 +198,7 @@ func TestRTUSessionRecoveryRequiresMonotonicQuietProof(t *testing.T) {
 	}
 	stream.writeN = 0
 	stream.writeErr = nil
-	if _, err := session.Exchange(context.Background(), 0x10, request, DefaultOpaqueVendorRetryPolicy()); err == nil {
+	if _, err := session.Exchange(context.Background(), 0x10, request, DefaultPrivateFunctionResponsePolicy()); err == nil {
 		t.Fatal("unproven successor accepted")
 	}
 	if stream.writes != 1 {
@@ -225,10 +206,79 @@ func TestRTUSessionRecoveryRequiresMonotonicQuietProof(t *testing.T) {
 	}
 }
 
+func TestRTUSessionRecoveryWaitsResponseHorizonBeforeQuietProof(t *testing.T) {
+	timing := rtuTestTiming(t, 115200)
+	stream := newRTUSessionFakeStream(
+		rtuSessionGap(timing.InterFrame()+1),
+		rtuSessionGap(timing.MaxResponseLatency()+timing.InterFrame()+1),
+	)
+	stream.writeN = 1
+	stream.writeErr = io.ErrUnexpectedEOF
+	session, err := NewRTUSession(RTUSessionConfig{
+		Stream: stream, Timing: timing, Enabled: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := newSessionPrivateFunctionRequest(t, 0x65, nil)
+	if _, err := session.Exchange(context.Background(), 0x10, request, DefaultPrivateFunctionResponsePolicy()); err == nil {
+		t.Fatal("partial write accepted")
+	}
+	if err := session.Recover(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := stream.RTUOffset(), timing.MaxResponseLatency()+timing.InterFrame(); got < want {
+		t.Fatalf("recovery offset = %s, want at least %s", got, want)
+	}
+}
+
+func TestRTUSessionRecoveryRequiresQuietProofAfterResponseHorizon(t *testing.T) {
+	timing := rtuTestTiming(t, 115200)
+	stream := newRTUSessionFakeStream(
+		rtuSessionGap(timing.MaxResponseLatency()),
+		rtuSessionGap(timing.MaxResponseLatency()+timing.InterFrame()+1),
+	)
+	stream.writeN = 1
+	stream.writeErr = io.ErrUnexpectedEOF
+	session, err := NewRTUSession(RTUSessionConfig{
+		Stream: stream, Timing: timing, Enabled: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := newSessionPrivateFunctionRequest(t, 0x65, nil)
+	if _, err := session.Exchange(context.Background(), 0x10, request, DefaultPrivateFunctionResponsePolicy()); err == nil {
+		t.Fatal("partial write accepted")
+	}
+	if err := session.Recover(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := stream.RTUOffset(), timing.MaxResponseLatency()+timing.InterFrame(); got < want {
+		t.Fatalf("recovery offset = %s, want at least %s", got, want)
+	}
+}
+
 type rtuSessionAction struct {
 	value  byte
 	offset time.Duration
 	err    error
+}
+
+func newSessionPrivateFunctionRequest(
+	t *testing.T,
+	code byte,
+	payload []byte,
+) PrivateFunctionRequest {
+	t.Helper()
+	function, err := NewPrivateFunctionCode(code)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request, err := NewPrivateFunctionRequest(function, payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return request
 }
 
 func rtuSessionBytes(frame []byte, offset time.Duration) []rtuSessionAction {

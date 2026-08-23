@@ -1,11 +1,11 @@
 {
   "schema": "helianthus-modbus-boundary/v1",
   "mode": "read_only",
-  "implementation_lock": "m1_vendor_opaque_protocol",
+  "implementation_lock": "m1_generic_private_function_protocol",
   "allowed_product_go_files": [
     "device_id.go",
     "doc.go",
-    "opaque_rtu.go",
+    "private_function.go",
     "pdu.go",
     "rtu_adu.go",
     "rtu_capability.go",
@@ -25,12 +25,12 @@
   "allowed_product_go_sha256": {
     "device_id.go": "2897dee6ab1917b0267de94aefc2d018c9ba803ec3f42a11143fc914caa865e5",
     "doc.go": "954697e330c467795c9d26f968711d66ff4335e37e9e73af27ce75ca4f49bb15",
-    "opaque_rtu.go": "0228fae2eab804b54aa88b727e211939b894f16a2328adca9d6ec17990602c02",
+    "private_function.go": "d514d4065fbbe3a8fc5f0f83f7f623e59a045c07526a610a4e96249ae1892919",
     "pdu.go": "6e10a628f3f79d5c19c7c51307308179644364a5ba2c698e39e4ec49ef4e1d8b",
     "rtu_adu.go": "2aede649a154c135a1da2c3b78f9a6fad2c6c814db6fb56c31efdbdb61b79001",
     "rtu_capability.go": "33f8427bccd92b337afe1c8947ed2809f0262db7e3a9697629ef593a6ab2b010",
     "rtu_endpoint.go": "5ec493f52dc4d7058589542fb532232036d235182e5f19530732ecad2b51bb61",
-    "rtu_session.go": "f0537edca3d6c7a8e6d7d8177fdba58ea05573bc3a78bca5e1c49487207a87ca",
+    "rtu_session.go": "1621aba290efc6f701d660a00173f22a258fd63f5679748f0547fea50e469f74",
     "rtu_timing.go": "daea0680aa70f1a552fc6facdd35e54161728c673625088c599951d560155231",
     "runtime_acquisition.go": "efa2aa5125d203dbf2bcd95330a279ee32e10ef6cb0f74d9fe030ec666112c0e",
     "runtime_normalization.go": "0e45d3ae333556b8cd7633151e324752c994e9a427875a0c4e611510e7313b9d",
@@ -44,7 +44,7 @@
   },
   "trusted_go_tool_sha256": {
     "scripts/acceptance_evidence/main.go": "903cfc5df5569c316186032ab2da644dcb664a51548b064e3d3e67c945b96880",
-    "scripts/read_only_surface/main.go": "d87d51b240cbf80605b7c939acde62f4c5d7bc92fac63bdf0ea67d527f7c3980"
+    "scripts/read_only_surface/main.go": "f187a24c36adef884b12b9155a8a3ee9b3f3dd0b8f43401cf52064181ae29420"
   },
   "trusted_python_tool_sha256": {
     "scripts/validate_m1_02_acceptance.py": "f64e579546bb49c22cdc092cae63d297d846e7e0d31aa46a91bddacc20b69092",
@@ -62,16 +62,8 @@
       "name": "read_input_registers"
     },
     {
-      "function_code": 100,
-      "name": "opaque_vendor_100"
-    },
-    {
-      "function_code": 101,
-      "name": "opaque_vendor_101"
-    },
-    {
-      "function_code": 102,
-      "name": "opaque_vendor_102"
+      "function_code_policy": "caller_supplied_non_exception_byte",
+      "name": "generic_private_function_code"
     },
     {
       "function_code": 43,

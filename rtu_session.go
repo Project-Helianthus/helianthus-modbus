@@ -28,7 +28,7 @@ type RTUSessionConfig struct {
 	MaxResponseFrames uint8
 }
 
-// RTUSession serializes opaque RTU exchanges over one explicitly supplied
+// RTUSession serializes private-function RTU exchanges over one explicitly supplied
 // stream. It retains no vendor semantics and never opens, discovers, or
 // configures a physical device.
 type RTUSession struct {
@@ -37,6 +37,7 @@ type RTUSession struct {
 	timing            RTUTiming
 	maxResponseFrames uint8
 	quarantined       bool
+	quarantineUntil   time.Duration
 }
 
 var errRTUSessionState = errors.New("invalid rtu session state")
@@ -78,13 +79,13 @@ func NewRTUSession(config RTUSessionConfig) (*RTUSession, error) {
 func (session *RTUSession) Exchange(
 	ctx context.Context,
 	unitID byte,
-	request OpaqueVendorRequest,
-	policy OpaqueVendorRetryPolicy,
-) ([]RTUOpaqueResponseADU, error) {
+	request PrivateFunctionRequest,
+	policy PrivateFunctionResponsePolicy,
+) ([]RTUPrivateFunctionResponseADU, error) {
 	if session == nil || ctx == nil {
 		return nil, errRTUSessionState
 	}
-	frame, err := EncodeRTUOpaqueADU(unitID, request)
+	frame, err := EncodeRTUPrivateFunctionADU(unitID, request)
 	if err != nil {
 		return nil, err
 	}
@@ -93,9 +94,9 @@ func (session *RTUSession) Exchange(
 		(policy.maxAttempts > 1 && !policy.replaySafe) {
 		return nil, protocolError(
 			ErrorInvalidRequest,
-			request.Function(),
+			FunctionCode(request.FunctionCode()),
 			0,
-			"opaque_vendor_retry_policy",
+			"private_function_response_policy",
 			-1,
 		)
 	}
@@ -114,7 +115,7 @@ func (session *RTUSession) Exchange(
 			return session.receiveLocked(ctx, unitID, request)
 		}
 		if written != 0 {
-			session.quarantined = true
+			session.enterQuarantineLocked()
 		}
 		if writeErr == nil {
 			writeErr = io.ErrShortWrite
@@ -130,19 +131,19 @@ func (session *RTUSession) Exchange(
 func (session *RTUSession) receiveLocked(
 	ctx context.Context,
 	unitID byte,
-	request OpaqueVendorRequest,
-) ([]RTUOpaqueResponseADU, error) {
+	request PrivateFunctionRequest,
+) ([]RTUPrivateFunctionResponseADU, error) {
 	decoder, err := NewRTUFrameDecoder(session.timing)
 	if err != nil {
 		return nil, err
 	}
-	var transaction OpaqueVendorTransaction
+	var transaction PrivateFunctionTransaction
 	if _, err := transaction.Begin(unitID, request); err != nil {
 		return nil, err
 	}
 	responseCtx, cancel := context.WithTimeout(ctx, session.timing.MaxResponseLatency())
 	defer cancel()
-	responses := make([]RTUOpaqueResponseADU, 0, session.maxResponseFrames)
+	responses := make([]RTUPrivateFunctionResponseADU, 0, session.maxResponseFrames)
 	haveBytes := false
 	for {
 		readCtx, stopRead := context.WithTimeout(responseCtx, session.timing.InterFrame())
@@ -150,7 +151,7 @@ func (session *RTUSession) receiveLocked(
 		stopRead()
 		if readErr == nil {
 			if err := decoder.FeedByte(offset, value); err != nil {
-				session.quarantined = true
+				session.enterQuarantineLocked()
 				_ = transaction.Timeout()
 				return nil, err
 			}
@@ -158,23 +159,23 @@ func (session *RTUSession) receiveLocked(
 			continue
 		}
 		if !errors.Is(readErr, context.DeadlineExceeded) {
-			session.quarantined = true
+			session.enterQuarantineLocked()
 			_ = transaction.Timeout()
 			return nil, readErr
 		}
 		if haveBytes {
 			frame, err := decoder.EndFrame(session.stream.RTUOffset())
 			if err != nil {
-				session.quarantined = true
+				session.enterQuarantineLocked()
 				_ = transaction.Timeout()
 				return nil, err
 			}
 			if len(responses) == int(session.maxResponseFrames) {
-				session.quarantined = true
+				session.enterQuarantineLocked()
 				_ = transaction.Timeout()
 				return nil, protocolError(
 					ErrorMalformedResponse,
-					request.Function(),
+					FunctionCode(request.FunctionCode()),
 					0,
 					"rtu_response_frame_count",
 					len(responses),
@@ -182,7 +183,7 @@ func (session *RTUSession) receiveLocked(
 			}
 			response, err := transaction.Accept(frame.Bytes())
 			if err != nil {
-				session.quarantined = true
+				session.enterQuarantineLocked()
 				_ = transaction.Timeout()
 				return nil, err
 			}
@@ -191,7 +192,7 @@ func (session *RTUSession) receiveLocked(
 			continue
 		}
 		if ctx.Err() != nil {
-			session.quarantined = true
+			session.enterQuarantineLocked()
 			_ = transaction.Timeout()
 			return nil, ctx.Err()
 		}
@@ -204,15 +205,25 @@ func (session *RTUSession) receiveLocked(
 			}
 			return responses, nil
 		}
-		session.quarantined = true
+		session.enterQuarantineLocked()
 		_ = transaction.Timeout()
 		return nil, responseCtx.Err()
 	}
 }
 
-// Recover discards delayed bytes until the injected stream reports a complete
-// configured t3.5 quiet interval. It is the only way to admit a successor
-// after a contaminated exchange.
+// enterQuarantineLocked preserves the entire response-latency horizon of a
+// potentially transmitted request. Callers hold session.mu.
+func (session *RTUSession) enterQuarantineLocked() {
+	until := session.stream.RTUOffset() + session.timing.MaxResponseLatency()
+	if until > session.quarantineUntil {
+		session.quarantineUntil = until
+	}
+	session.quarantined = true
+}
+
+// Recover discards delayed bytes through the entire response-latency horizon,
+// then requires a complete configured t3.5 quiet interval. It is the only way
+// to admit a successor after a contaminated exchange.
 func (session *RTUSession) Recover(ctx context.Context) error {
 	if session == nil || ctx == nil {
 		return errRTUSessionState
@@ -244,7 +255,14 @@ func (session *RTUSession) Recover(ctx context.Context) error {
 			if now < quietAfter || now-quietAfter < session.timing.InterFrame() {
 				return errRTUSessionState
 			}
+			if now < session.quarantineUntil {
+				continue
+			}
+			if now-session.quarantineUntil < session.timing.InterFrame() {
+				continue
+			}
 			session.quarantined = false
+			session.quarantineUntil = 0
 			return nil
 		}
 		return recoveryCtx.Err()

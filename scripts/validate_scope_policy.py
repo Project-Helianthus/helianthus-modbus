@@ -24,6 +24,7 @@ EXPECTED_POLICY = {
         "rtu_adu.go",
         "rtu_capability.go",
         "rtu_endpoint.go",
+        "rtu_session.go",
         "rtu_timing.go",
         "runtime_acquisition.go",
         "runtime_normalization.go",
@@ -40,7 +41,7 @@ EXPECTED_POLICY = {
             "2897dee6ab1917b0267de94aefc2d018c9ba803ec3f42a11143fc914caa865e5"
         ),
         "doc.go": (
-            "ebf7602eea88e91db901ee5e250bcf3fbb35f4babf9c548a43876071a4b7ea77"
+            "954697e330c467795c9d26f968711d66ff4335e37e9e73af27ce75ca4f49bb15"
         ),
         "opaque_rtu.go": (
             "0228fae2eab804b54aa88b727e211939b894f16a2328adca9d6ec17990602c02"
@@ -56,6 +57,9 @@ EXPECTED_POLICY = {
         ),
         "rtu_endpoint.go": (
             "5ec493f52dc4d7058589542fb532232036d235182e5f19530732ecad2b51bb61"
+        ),
+        "rtu_session.go": (
+            "f0537edca3d6c7a8e6d7d8177fdba58ea05573bc3a78bca5e1c49487207a87ca"
         ),
         "rtu_timing.go": (
             "daea0680aa70f1a552fc6facdd35e54161728c673625088c599951d560155231"

@@ -28,7 +28,7 @@ type RTUSessionConfig struct {
 	MaxResponseFrames uint8
 }
 
-// RTUSession serializes opaque RTU exchanges over one explicitly supplied
+// RTUSession serializes private-function RTU exchanges over one explicitly supplied
 // stream. It retains no vendor semantics and never opens, discovers, or
 // configures a physical device.
 type RTUSession struct {
@@ -78,13 +78,13 @@ func NewRTUSession(config RTUSessionConfig) (*RTUSession, error) {
 func (session *RTUSession) Exchange(
 	ctx context.Context,
 	unitID byte,
-	request OpaqueVendorRequest,
-	policy OpaqueVendorRetryPolicy,
-) ([]RTUOpaqueResponseADU, error) {
+	request PrivateFunctionRequest,
+	policy PrivateFunctionResponsePolicy,
+) ([]RTUPrivateFunctionResponseADU, error) {
 	if session == nil || ctx == nil {
 		return nil, errRTUSessionState
 	}
-	frame, err := EncodeRTUOpaqueADU(unitID, request)
+	frame, err := EncodeRTUPrivateFunctionADU(unitID, request)
 	if err != nil {
 		return nil, err
 	}
@@ -93,9 +93,9 @@ func (session *RTUSession) Exchange(
 		(policy.maxAttempts > 1 && !policy.replaySafe) {
 		return nil, protocolError(
 			ErrorInvalidRequest,
-			request.Function(),
+			FunctionCode(request.FunctionCode()),
 			0,
-			"opaque_vendor_retry_policy",
+			"private_function_response_policy",
 			-1,
 		)
 	}
@@ -130,19 +130,19 @@ func (session *RTUSession) Exchange(
 func (session *RTUSession) receiveLocked(
 	ctx context.Context,
 	unitID byte,
-	request OpaqueVendorRequest,
-) ([]RTUOpaqueResponseADU, error) {
+	request PrivateFunctionRequest,
+) ([]RTUPrivateFunctionResponseADU, error) {
 	decoder, err := NewRTUFrameDecoder(session.timing)
 	if err != nil {
 		return nil, err
 	}
-	var transaction OpaqueVendorTransaction
+	var transaction PrivateFunctionTransaction
 	if _, err := transaction.Begin(unitID, request); err != nil {
 		return nil, err
 	}
 	responseCtx, cancel := context.WithTimeout(ctx, session.timing.MaxResponseLatency())
 	defer cancel()
-	responses := make([]RTUOpaqueResponseADU, 0, session.maxResponseFrames)
+	responses := make([]RTUPrivateFunctionResponseADU, 0, session.maxResponseFrames)
 	haveBytes := false
 	for {
 		readCtx, stopRead := context.WithTimeout(responseCtx, session.timing.InterFrame())
@@ -174,7 +174,7 @@ func (session *RTUSession) receiveLocked(
 				_ = transaction.Timeout()
 				return nil, protocolError(
 					ErrorMalformedResponse,
-					request.Function(),
+					FunctionCode(request.FunctionCode()),
 					0,
 					"rtu_response_frame_count",
 					len(responses),

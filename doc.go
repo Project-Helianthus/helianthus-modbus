@@ -5,8 +5,10 @@
 // endpoint-owned FC03/FC04 plus FC2B/MEI0E Modbus TCP runtime. NewTCPEndpoint
 // is the sole construction root for that aggregate and owns pooling,
 // scheduling, absolute deadlines, correlation, bounded retry state, replay
-// ordering, reconnect backoff, and shutdown. The RTU surface is an offline,
-// fixture-only FC03/FC04 plus FC2B/MEI0E owner with no serial-device admission
-// and the explicit experimental disposition FIXTURE_ONLY_NO_HARDWARE. Physical
-// RTU qualification and vendor semantics remain explicit later milestones.
+// ordering, reconnect backoff, and shutdown. The RTU fixture surface remains
+// offline-only and has the explicit experimental disposition
+// FIXTURE_ONLY_NO_HARDWARE. RTUSession is a default-denied, injected-stream
+// boundary; it has no serial-device admission or device discovery capability.
+// Physical RTU qualification and vendor semantics remain explicit later
+// milestones.
 package modbus

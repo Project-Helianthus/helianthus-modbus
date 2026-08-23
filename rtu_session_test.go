@@ -209,8 +209,8 @@ func TestRTUSessionRecoveryRequiresMonotonicQuietProof(t *testing.T) {
 func TestRTUSessionRecoveryWaitsResponseHorizonBeforeQuietProof(t *testing.T) {
 	timing := rtuTestTiming(t, 115200)
 	stream := newRTUSessionFakeStream(
-		rtuSessionGap(timing.InterFrame() + 1),
-		rtuSessionGap(timing.MaxResponseLatency() + timing.InterFrame() + 1),
+		rtuSessionGap(timing.InterFrame()+1),
+		rtuSessionGap(timing.MaxResponseLatency()+timing.InterFrame()+1),
 	)
 	stream.writeN = 1
 	stream.writeErr = io.ErrUnexpectedEOF

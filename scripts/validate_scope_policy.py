@@ -62,7 +62,7 @@ EXPECTED_POLICY = {
             "5ec493f52dc4d7058589542fb532232036d235182e5f19530732ecad2b51bb61"
         ),
         "rtu_serial.go": "8bc0a0b696f4b5f3bbd5f20cfa66afffb16ba1e3ec8356de05470f43bb49ad61",
-        "rtu_serial_linux.go": "7bcc12448248893b12871cfcf37e89ce8f206a4e8295464ad92866053659597c",
+        "rtu_serial_linux.go": "2ebee9f012ae7e88714b78fe192938178a0a3cba4611ec167584b4bf385ae0b5",
         "rtu_serial_stub.go": "98a471cd37831225e9c34bd8bf315fdad831637282265df3e75db69aab9b1649",
         "rtu_session.go": (
             "1621aba290efc6f701d660a00173f22a258fd63f5679748f0547fea50e469f74"

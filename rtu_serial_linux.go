@@ -104,7 +104,10 @@ func (backend *linuxRTUSerialBackend) ReceiveByte(ctx context.Context) (byte, er
 			return buffer[0], nil
 		}
 		if err == nil && n == 0 {
-			return 0, io.EOF
+			if err := waitRTUSerialIdle(ctx); err != nil {
+				return 0, err
+			}
+			continue
 		}
 		if errors.Is(err, os.ErrDeadlineExceeded) {
 			if ctx.Err() != nil {
@@ -113,6 +116,17 @@ func (backend *linuxRTUSerialBackend) ReceiveByte(ctx context.Context) (byte, er
 			continue
 		}
 		return 0, err
+	}
+}
+
+func waitRTUSerialIdle(ctx context.Context) error {
+	timer := time.NewTimer(time.Millisecond)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
 	}
 }
 

@@ -83,6 +83,40 @@ func TestRTUSerialStreamPassesCancellationAndClosesOnce(t *testing.T) {
 	}
 }
 
+func TestRTUSerialStreamCarriesOpaquePrivateFunctionExchange(t *testing.T) {
+	now := time.Unix(0, 0)
+	request := newSessionPrivateFunctionRequest(t, 0x64, []byte{0})
+	response := makePrivateFunctionRTUFrame(t, 0x10, request.FunctionCode(), []byte{0})
+	reads := make([]serialRead, len(response))
+	for index, value := range response {
+		reads[index] = serialRead{value: value}
+	}
+	backend := &fakeRTUSerialBackend{
+		reads:     reads,
+		onTimeout: func() { now = now.Add(3 * time.Millisecond) },
+	}
+	stream, err := newRTUSerialStream(backend, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewRTUSession(RTUSessionConfig{
+		Stream: stream, Timing: rtuTestTiming(t, 115200), Enabled: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	responses, err := session.Exchange(context.Background(), 0x10, request, DefaultPrivateFunctionResponsePolicy())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(responses) != 1 || string(responses[0].Payload()) != string([]byte{0}) {
+		t.Fatalf("responses = %#v", responses)
+	}
+	if len(backend.writes) != 1 {
+		t.Fatalf("writes = %#v", backend.writes)
+	}
+}
+
 type serialRead struct {
 	value byte
 	err   error
@@ -92,11 +126,12 @@ type fakeRTUSerialBackend struct {
 	mu        sync.Mutex
 	reads     []serialRead
 	readBlock bool
+	onTimeout func()
 	writes    [][]byte
 	closes    int
 }
 
-func (backend *fakeRTUSerialBackend) ReadByte(ctx context.Context) (byte, error) {
+func (backend *fakeRTUSerialBackend) ReceiveByte(ctx context.Context) (byte, error) {
 	backend.mu.Lock()
 	if len(backend.reads) != 0 {
 		read := backend.reads[0]
@@ -110,7 +145,13 @@ func (backend *fakeRTUSerialBackend) ReadByte(ctx context.Context) (byte, error)
 		<-ctx.Done()
 		return 0, ctx.Err()
 	}
-	return 0, io.EOF
+	<-ctx.Done()
+	backend.mu.Lock()
+	if backend.onTimeout != nil {
+		backend.onTimeout()
+	}
+	backend.mu.Unlock()
+	return 0, ctx.Err()
 }
 
 func (backend *fakeRTUSerialBackend) Write(ctx context.Context, frame []byte) (int, error) {

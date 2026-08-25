@@ -7,8 +7,8 @@
 // scheduling, absolute deadlines, correlation, bounded retry state, replay
 // ordering, reconnect backoff, and shutdown. The RTU fixture surface remains
 // offline-only and has the explicit experimental disposition
-// FIXTURE_ONLY_NO_HARDWARE. RTUSession is a default-denied, injected-stream
-// boundary; it has no serial-device admission or device discovery capability.
-// Physical RTU qualification and vendor semantics remain explicit later
-// milestones.
+// FIXTURE_ONLY_NO_HARDWARE. RTUSerialStream is a generic, explicitly
+// configured Linux byte-stream boundary; it does not discover devices, select
+// vendor codecs, or admit operations. Physical qualification and vendor
+// semantics remain explicit later milestones.
 package modbus

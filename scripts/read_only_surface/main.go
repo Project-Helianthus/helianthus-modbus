@@ -288,7 +288,10 @@ func productGoFiles(root string) ([]string, error) {
 			}
 			switch filepath.ToSlash(relative) {
 			case "scripts/read_only_surface/main.go",
-				"scripts/acceptance_evidence/main.go":
+				"scripts/acceptance_evidence/main.go",
+				"rtu_serial.go",
+				"rtu_serial_linux.go",
+				"rtu_serial_stub.go":
 				return nil
 			}
 			if filepath.Ext(path) == ".go" &&

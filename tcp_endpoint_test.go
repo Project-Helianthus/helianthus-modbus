@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"go/ast"
+	"go/build"
 	"go/importer"
 	"go/parser"
 	"go/token"
@@ -1469,8 +1470,11 @@ func TestTCPEndpointPublicSurfaceHasNoLowLevelConstructorBypass(t *testing.T) {
 	}
 	set := token.NewFileSet()
 	packages, err := parser.ParseDir(set, root, func(info os.FileInfo) bool {
-		return strings.HasSuffix(info.Name(), ".go") &&
-			!strings.HasSuffix(info.Name(), "_test.go")
+		if !strings.HasSuffix(info.Name(), ".go") || strings.HasSuffix(info.Name(), "_test.go") {
+			return false
+		}
+		included, matchErr := build.Default.MatchFile(root, info.Name())
+		return matchErr == nil && included
 	}, parser.ParseComments)
 	if err != nil {
 		t.Fatal(err)

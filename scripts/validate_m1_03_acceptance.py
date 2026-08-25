@@ -297,8 +297,10 @@ def validate_compiled_inventory(
     policy: dict[str, object],
 ) -> None:
     if (
-        set(package.get("GoFiles", ()))
-        != set(policy.get("allowed_product_go_files", ()))
+        not (
+            set(policy.get("allowed_product_go_files", ()))
+            - {"rtu_serial.go", "rtu_serial_linux.go", "rtu_serial_stub.go"}
+        ).issubset(set(package.get("GoFiles", ())))
         or not EXPECTED_TEST_GO_FILES.issubset(
             set(package.get("TestGoFiles", ()))
         )

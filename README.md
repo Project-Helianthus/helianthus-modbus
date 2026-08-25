@@ -11,11 +11,11 @@ correlation, scheduling, pooling, coalescing, cancellation, and recovery.
 It also implements typed RTU framing, deterministic timing, and a serialized
 offline fixture owner for abandonment, quarantine, and recovery tests.
 
-The RTU capability is experimental, disabled by default, and exactly
-`FIXTURE_ONLY_NO_HARDWARE`. It exposes no serial port, device path, physical
-reader/writer, or hardware-qualified claim. `NewRTUFixtureEndpoint` operates
-only on an in-memory `RTUFixtureLine`; physical RTU admission remains separate
-qualification work.
+The fixture RTU capability is experimental, disabled by default, and exactly
+`FIXTURE_ONLY_NO_HARDWARE`. `NewRTUFixtureEndpoint` operates only on an
+in-memory `RTUFixtureLine`. Separately, `OpenRTUSerial` creates a generic,
+explicitly configured Linux byte stream for RTU sessions. It has no device
+discovery, vendor selection, operation admission, or hardware-qualified claim.
 
 `NewTCPEndpoint` is the single public construction root for the current
 read-only FC03/FC04 and FC2B/MEI type 0x0E runtime. It owns the connection

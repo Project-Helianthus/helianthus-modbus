@@ -117,26 +117,17 @@ func (backend *linuxRTUSerialBackend) ReceiveByte(ctx context.Context) (byte, er
 }
 
 func (backend *linuxRTUSerialBackend) Write(ctx context.Context, frame []byte) (int, error) {
-	for written := 0; written < len(frame); {
-		if err := setRTUSerialDeadline(ctx, backend.file.SetWriteDeadline); err != nil {
-			return written, err
-		}
-		n, err := backend.file.Write(frame[written:])
-		written += n
-		if err == nil && n == 0 {
-			return written, io.ErrShortWrite
-		}
-		if errors.Is(err, os.ErrDeadlineExceeded) {
-			if ctx.Err() != nil {
-				return written, ctx.Err()
-			}
-			continue
-		}
-		if err != nil {
-			return written, err
-		}
+	if err := setRTUSerialDeadline(ctx, backend.file.SetWriteDeadline); err != nil {
+		return 0, err
 	}
-	return len(frame), nil
+	written, err := backend.file.Write(frame)
+	if err != nil {
+		return written, err
+	}
+	if written != len(frame) {
+		return written, io.ErrShortWrite
+	}
+	return written, nil
 }
 
 func (backend *linuxRTUSerialBackend) Close() error {

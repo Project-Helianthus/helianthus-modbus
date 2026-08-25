@@ -117,6 +117,30 @@ func TestRTUSerialStreamCarriesOpaquePrivateFunctionExchange(t *testing.T) {
 	}
 }
 
+func TestRTUSerialStreamShortWriteQuarantinesPrivateFunctionSession(t *testing.T) {
+	backend := &fakeRTUSerialBackend{writeN: 1}
+	stream, err := newRTUSerialStream(backend, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewRTUSession(RTUSessionConfig{
+		Stream: stream, Timing: rtuTestTiming(t, 115200), Enabled: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := newSessionPrivateFunctionRequest(t, 0x65, nil)
+	if _, err := session.Exchange(context.Background(), 0x10, request, DefaultPrivateFunctionResponsePolicy()); !errors.Is(err, io.ErrShortWrite) {
+		t.Fatalf("short write error = %v, want io.ErrShortWrite", err)
+	}
+	if _, err := session.Exchange(context.Background(), 0x10, request, DefaultPrivateFunctionResponsePolicy()); err == nil {
+		t.Fatal("quarantined successor accepted")
+	}
+	if len(backend.writes) != 1 {
+		t.Fatalf("writes = %#v", backend.writes)
+	}
+}
+
 type serialRead struct {
 	value byte
 	err   error
@@ -128,6 +152,7 @@ type fakeRTUSerialBackend struct {
 	readBlock bool
 	onTimeout func()
 	writes    [][]byte
+	writeN    int
 	closes    int
 }
 
@@ -161,6 +186,9 @@ func (backend *fakeRTUSerialBackend) Write(ctx context.Context, frame []byte) (i
 	backend.mu.Lock()
 	defer backend.mu.Unlock()
 	backend.writes = append(backend.writes, append([]byte(nil), frame...))
+	if backend.writeN != 0 {
+		return backend.writeN, nil
+	}
 	return len(frame), nil
 }
 

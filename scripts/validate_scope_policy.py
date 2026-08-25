@@ -13,9 +13,9 @@ from typing import Iterable
 
 
 EXPECTED_POLICY = {
-    "schema": "helianthus-modbus-boundary/v1",
-    "mode": "read_only",
-    "implementation_lock": "m1_generic_private_function_protocol",
+    "schema": "helianthus-modbus-boundary/v2",
+    "mode": "vendor_neutral_transport",
+    "implementation_lock": "m2_configured_serial_transport",
     "allowed_product_go_files": [
         "device_id.go",
         "doc.go",
@@ -24,6 +24,9 @@ EXPECTED_POLICY = {
         "rtu_adu.go",
         "rtu_capability.go",
         "rtu_endpoint.go",
+        "rtu_serial.go",
+        "rtu_serial_linux.go",
+        "rtu_serial_stub.go",
         "rtu_session.go",
         "rtu_timing.go",
         "runtime_acquisition.go",
@@ -41,7 +44,7 @@ EXPECTED_POLICY = {
             "2897dee6ab1917b0267de94aefc2d018c9ba803ec3f42a11143fc914caa865e5"
         ),
         "doc.go": (
-            "954697e330c467795c9d26f968711d66ff4335e37e9e73af27ce75ca4f49bb15"
+            "a8f1e9ea1e8f13e40af5ebeba95d07d11d593969afe814a3fe64d3f8dcb1f365"
         ),
         "private_function.go": (
             "d514d4065fbbe3a8fc5f0f83f7f623e59a045c07526a610a4e96249ae1892919"
@@ -58,6 +61,9 @@ EXPECTED_POLICY = {
         "rtu_endpoint.go": (
             "5ec493f52dc4d7058589542fb532232036d235182e5f19530732ecad2b51bb61"
         ),
+        "rtu_serial.go": "8bc0a0b696f4b5f3bbd5f20cfa66afffb16ba1e3ec8356de05470f43bb49ad61",
+        "rtu_serial_linux.go": "7bcc12448248893b12871cfcf37e89ce8f206a4e8295464ad92866053659597c",
+        "rtu_serial_stub.go": "98a471cd37831225e9c34bd8bf315fdad831637282265df3e75db69aab9b1649",
         "rtu_session.go": (
             "1621aba290efc6f701d660a00173f22a258fd63f5679748f0547fea50e469f74"
         ),
@@ -97,7 +103,7 @@ EXPECTED_POLICY = {
             "903cfc5df5569c316186032ab2da644dcb664a51548b064e3d3e67c945b96880"
         ),
         "scripts/read_only_surface/main.go": (
-            "f187a24c36adef884b12b9155a8a3ee9b3f3dd0b8f43401cf52064181ae29420"
+            "0e6d6412ddb399210b14ee45b9e6bcdce25f81b61ae2aba203c7e1527fac9b0f"
         ),
     },
     "trusted_python_tool_sha256": {
@@ -105,7 +111,7 @@ EXPECTED_POLICY = {
             "f64e579546bb49c22cdc092cae63d297d846e7e0d31aa46a91bddacc20b69092"
         ),
         "scripts/validate_m1_03_acceptance.py": (
-            "0df1e3344f743d6a8f2a4bea490f37cf9af6ffa50f2e1bdc3e278b8acfc3dc48"
+            "c3b476c1101b09b38bd03c48ede98a288f07bc3d81b6a623a2fa301172f32589"
         ),
         "scripts/validate_m1_04_acceptance.py": (
             "67eefbf1db0b90cf172e627ad9c21a1a6641d8231500504d7f3b3e9f55d93add"
@@ -145,17 +151,8 @@ EXPECTED_POLICY = {
         "customfunction",
         "functioncodeoverride",
     ],
-    "write_support": "separate_plan_required",
+    "write_support": "configured_stream_only",
 }
-
-
-# The current policy is the immutable v2 transport contract. Its content is
-# separately checked by the product-file and trusted-tool hash inventories.
-EXPECTED_POLICY = json.loads(
-    (Path(__file__).resolve().parents[1] / "policy" / "phase1-readonly.json").read_text(
-        encoding="utf-8"
-    )
-)
 
 
 class PolicyError(RuntimeError):
@@ -247,7 +244,7 @@ def validate_read_only_wire_surface(root: Path) -> None:
     ]
     if write_sites != [
         ("rtu_serial.go", "return backend.Write(ctx, frame)"),
-        ("rtu_serial_linux.go", "n, err := backend.file.Write(frame[written:])"),
+        ("rtu_serial_linux.go", "written, err := backend.file.Write(frame)"),
         ("tcp_transport.go", "written, writeErr := transport.conn.Write(adu)"),
     ]:
         raise PolicyError(f"unexpected product write sites: {write_sites}")

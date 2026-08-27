@@ -34,6 +34,11 @@ EXPECTED_POLICY = {
         "tcp_adu.go",
         "tcp_coalescing.go",
         "tcp_endpoint.go",
+        "tcp_endpoint_lifecycle.go",
+        "tcp_endpoint_read.go",
+        "tcp_endpoint_response.go",
+        "tcp_endpoint_retry.go",
+        "tcp_endpoint_write.go",
         "tcp_owner.go",
         "tcp_pool.go",
         "tcp_scheduler.go",
@@ -83,7 +88,22 @@ EXPECTED_POLICY = {
             "2cb7178b709156261ef4e704f127d7524ca3e9f3ec33f18856f0415a2f9a15b7"
         ),
         "tcp_endpoint.go": (
-            "085bb755a96c6a8990a7cf72cf5c9fdddc3c430f291e72357ee9b5b88dde7b5f"
+            "ef390c3571c2ed8e439782a3786eac43267e7a1bd64d965e3ef5765c22ef33c0"
+        ),
+        "tcp_endpoint_lifecycle.go": (
+            "c4e87eec337419bad97494283cafde8df5f98c344bf77766b96b5d6bfe5c36e8"
+        ),
+        "tcp_endpoint_read.go": (
+            "8bb475db4601194839d804e3ae4da9bc0941f7004b36a064c3eb861b2f415c24"
+        ),
+        "tcp_endpoint_response.go": (
+            "40ac04f81e2e31244f3e62fadf487f31e103511b4343478a82cd1b8adbde34a4"
+        ),
+        "tcp_endpoint_retry.go": (
+            "5b3ca071626f039bbd12439eccefeddb931f093ea28a6a5bf821586dddb2fe6c"
+        ),
+        "tcp_endpoint_write.go": (
+            "cf7f1075f2ef2932883f50937441002cf428b4907beda503eb53d40af9289998"
         ),
         "tcp_owner.go": (
             "919029df866f3db1157742c84bdeb689ea4b898d639d2ea993ec5b896bdc608b"

@@ -5,14 +5,15 @@
   "allowed_product_go_files": [
     "device_id.go",
     "doc.go",
-    "private_function.go",
     "pdu.go",
+    "private_function.go",
     "rtu_adu.go",
     "rtu_capability.go",
     "rtu_endpoint.go",
-	"rtu_serial.go",
-	"rtu_serial_linux.go",
-	"rtu_serial_stub.go",
+    "rtu_production.go",
+    "rtu_serial.go",
+    "rtu_serial_linux.go",
+    "rtu_serial_stub.go",
     "rtu_session.go",
     "rtu_timing.go",
     "runtime_acquisition.go",
@@ -56,7 +57,8 @@
     "tcp_owner.go": "919029df866f3db1157742c84bdeb689ea4b898d639d2ea993ec5b896bdc608b",
     "tcp_pool.go": "bdbc8f871915f1173d67a211dcff8572516e071cdb3d1793a463f5598c8e7114",
     "tcp_scheduler.go": "5429a20ac9ab2410224c79f47cdfeac712e3f613844f476a13ce8a5ab21e27a9",
-    "tcp_transport.go": "935104fd4086a016241fa8358be885aa99c55f80d220a03255e42b31e1c4fca4"
+    "tcp_transport.go": "935104fd4086a016241fa8358be885aa99c55f80d220a03255e42b31e1c4fca4",
+    "rtu_production.go": "f6677340708b8dd681e102e6b2058bd3671e904af4605b71e1aad6a3900aceb6"
   },
   "trusted_go_tool_sha256": {
     "scripts/acceptance_evidence/main.go": "903cfc5df5569c316186032ab2da644dcb664a51548b064e3d3e67c945b96880",

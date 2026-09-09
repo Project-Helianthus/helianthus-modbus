@@ -17,6 +17,15 @@ in-memory `RTUFixtureLine`. Separately, `OpenRTUSerial` creates a generic,
 explicitly configured Linux byte stream for RTU sessions. It has no device
 discovery, vendor selection, operation admission, or hardware-qualified claim.
 
+`OpenRTUProductionEndpoint` is the separate opt-in production-path root for
+already-admitted FC03/FC04 reads. It owns one configured stream, one in-flight
+exchange, immutable request/response ADU evidence, generation fencing, and
+currentness. It accepts no profile, vendor codec, scan, broadcast, write, or
+unqualified operation. Its public contract is
+[`docs-modbus#146`](https://github.com/Project-Helianthus/helianthus-docs-modbus/issues/146),
+merged at `35151979c8561d5dc4215030899277aec36d2f9f`; offline validation is
+not physical qualification, device compatibility, or support.
+
 `NewTCPEndpoint` is the single public construction root for the current
 read-only FC03/FC04 and FC2B/MEI type 0x0E runtime. It owns the connection
 pool, scheduler, transaction owners, reconnect backoff, monotonic clock, and

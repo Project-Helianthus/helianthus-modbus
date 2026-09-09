@@ -251,3 +251,48 @@ func TestRTUProductionRejectsTimingAndRecoveryBoundMismatch(t *testing.T) {
 		t.Fatal("invalid config wrote")
 	}
 }
+
+func TestRTUProductionRecoveryDiscardsDelayedOldGenerationFrame(t *testing.T) {
+	req := rtuReadRequest(t, FunctionReadHoldingRegisters)
+	stream := &productionStream{short: true}
+	e := productionEndpoint(t, stream)
+	_, _, err := e.Read(context.Background(), 1, req)
+	if !errors.Is(err, io.ErrShortWrite) {
+		t.Fatalf("fence=%v", err)
+	}
+	stream.short = false
+	// This is a valid same-shape response for the retired generation. Recovery
+	// must consume it before it creates generation two.
+	stream.bytes = productionReadResponse(t, 1, req, []uint16{9, 9, 9})
+	if err := e.Recover(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	stream.bytes = productionReadResponse(t, 1, req, []uint16{2, 2, 2})
+	got, evidence, err := e.Read(context.Background(), 1, req)
+	if err != nil || evidence.Generation != 2 || got.Words[0] != 2 {
+		t.Fatalf("successor=%v %#v %#v", err, got, evidence)
+	}
+}
+
+func TestRTUProductionRejectsRecoveryBoundsAndNoByteTimeout(t *testing.T) {
+	serial := RTUSerialConfig{Path: "configured", Baud: 9600, DataBits: 8, Parity: RTUParityEven, StopBits: 1}
+	for _, quiescence := range []time.Duration{30 * time.Millisecond, 61 * time.Second} {
+		timing, err := NewRTUTiming(RTUTimingConfig{Baud: 9600, DataBits: 8, Parity: RTUParityEven, StopBits: 1, MaxResponseLatency: 20 * time.Millisecond, MaxQuiescence: quiescence})
+		if err != nil {
+			t.Fatal(err)
+		}
+		stream := &productionStream{}
+		if _, err := newRTUProductionEndpoint(RTUProductionConfig{Endpoint: "rtu-a", Serial: serial, Timing: timing, ResponseTimeout: 20 * time.Millisecond, Enabled: true, Admission: productionAdmission(true)}, stream); err == nil {
+			t.Fatalf("quiescence %s accepted", quiescence)
+		}
+		if len(stream.writes) != 0 {
+			t.Fatal("invalid recovery bound wrote")
+		}
+	}
+	stream := &productionStream{}
+	e := productionEndpoint(t, stream)
+	_, evidence, err := e.Read(context.Background(), 1, rtuReadRequest(t, FunctionReadHoldingRegisters))
+	if err == nil || !evidence.ReceiptWall.IsZero() || evidence.Current {
+		t.Fatalf("timeout=%v %#v", err, evidence)
+	}
+}

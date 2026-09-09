@@ -138,7 +138,7 @@ func (e *RTUProductionEndpoint) Read(ctx context.Context, unit byte, request Rea
 	}
 	e.inflight = true
 	e.nextID++
-	evidence := RTUReadEvidence{Endpoint: e.endpoint, Generation: e.generation, RequestID: e.nextID, UnitID: unit, Function: request.Function(), Offset: request.Offset(), Quantity: request.Quantity(), RequestADU: cloneBytes(frame), SentAt: e.stream.RTUOffset(), ReceiptWall: time.Now(), ClockEpoch: "system-monotonic-v1"}
+	evidence := RTUReadEvidence{Endpoint: e.endpoint, Generation: e.generation, RequestID: e.nextID, UnitID: unit, Function: request.Function(), Offset: request.Offset(), Quantity: request.Quantity(), RequestADU: cloneBytes(frame), SentAt: e.stream.RTUOffset(), ClockEpoch: "system-monotonic-v1"}
 	e.mu.Unlock()
 	defer func() { e.mu.Lock(); e.inflight = false; e.mu.Unlock() }()
 	written, writeErr := e.stream.WriteRTU(ctx, frame)
@@ -146,30 +146,31 @@ func (e *RTUProductionEndpoint) Read(ctx context.Context, unit byte, request Rea
 		if writeErr == nil {
 			writeErr = io.ErrShortWrite
 		}
-		return ReadRegistersResponse{}, e.finish(evidence, nil, false, "write_fault", true), writeErr
+		return ReadRegistersResponse{}, e.finish(evidence, nil, time.Time{}, false, "write_fault", true), writeErr
 	}
-	response, raw, receiveAt, err := e.receive(ctx, unit, request)
+	response, raw, receiveAt, receiptWall, err := e.receive(ctx, unit, request)
 	if err != nil {
 		var pe *ProtocolError
 		if errors.As(err, &pe) && pe.Kind == ErrorExceptionResponse {
-			return ReadRegistersResponse{}, e.finish(evidence, raw, true, "exception", false), err
+			return ReadRegistersResponse{}, e.finish(evidence, raw, receiptWall, true, "exception", false), err
 		}
-		return ReadRegistersResponse{}, e.finish(evidence, raw, false, "transport_fault", true), err
+		return ReadRegistersResponse{}, e.finish(evidence, raw, receiptWall, false, "transport_fault", true), err
 	}
 	evidence.ReceivedAt = receiveAt
 	evidence.Words = append([]uint16(nil), response.Words...)
-	return response, e.finish(evidence, raw, true, "success", false), nil
+	return response, e.finish(evidence, raw, receiptWall, true, "success", false), nil
 }
 
-func (e *RTUProductionEndpoint) receive(ctx context.Context, unit byte, request ReadRegistersRequest) (ReadRegistersResponse, []byte, time.Duration, error) {
+func (e *RTUProductionEndpoint) receive(ctx context.Context, unit byte, request ReadRegistersRequest) (ReadRegistersResponse, []byte, time.Duration, time.Time, error) {
 	deadline, cancel := context.WithTimeout(ctx, e.timeout)
 	defer cancel()
 	decoder, err := NewRTUFrameDecoder(e.timing)
 	if err != nil {
-		return ReadRegistersResponse{}, nil, 0, err
+		return ReadRegistersResponse{}, nil, 0, time.Time{}, err
 	}
 	haveBytes := false
 	raw := []byte(nil)
+	receiptWall := time.Time{}
 	for {
 		readCtx := deadline
 		cancelRead := func() {}
@@ -180,38 +181,44 @@ func (e *RTUProductionEndpoint) receive(ctx context.Context, unit byte, request 
 		cancelRead()
 		if readErr == nil {
 			raw = append(raw, v)
+			if receiptWall.IsZero() {
+				receiptWall = time.Now()
+			}
 			if err := decoder.FeedByte(offset, v); err != nil {
-				return ReadRegistersResponse{}, raw, offset, err
+				return ReadRegistersResponse{}, raw, offset, receiptWall, err
 			}
 			haveBytes = true
 			continue
 		}
 		if !errors.Is(readErr, context.DeadlineExceeded) {
-			return ReadRegistersResponse{}, raw, offset, readErr
+			return ReadRegistersResponse{}, raw, offset, receiptWall, readErr
 		}
 		if deadline.Err() != nil {
-			return ReadRegistersResponse{}, raw, offset, deadline.Err()
+			return ReadRegistersResponse{}, raw, offset, receiptWall, deadline.Err()
 		}
 		if !haveBytes {
 			continue
 		}
 		frame, endErr := decoder.EndFrame(offset)
 		if endErr != nil {
-			return ReadRegistersResponse{}, raw, offset, endErr
+			return ReadRegistersResponse{}, raw, offset, receiptWall, endErr
 		}
 		raw = frame.Bytes()
 		decoded, decodeErr := DecodeRTUReadResponseADU(unit, request, raw)
 		if decodeErr != nil {
-			return ReadRegistersResponse{}, raw, offset, decodeErr
+			return ReadRegistersResponse{}, raw, offset, receiptWall, decodeErr
 		}
-		return decoded.Response(), raw, offset, nil
+		return decoded.Response(), raw, offset, receiptWall, nil
 	}
 }
 
-func (e *RTUProductionEndpoint) finish(ev RTUReadEvidence, response []byte, integrity bool, outcome string, fence bool) RTUReadEvidence {
+func (e *RTUProductionEndpoint) finish(ev RTUReadEvidence, response []byte, receiptWall time.Time, integrity bool, outcome string, fence bool) RTUReadEvidence {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	ev.ResponseADU = cloneBytes(response)
+	if len(response) != 0 {
+		ev.ReceiptWall = receiptWall
+	}
 	ev.IntegrityValid = integrity
 	ev.TerminalOutcome = outcome
 	ev.ReceivedAt = e.stream.RTUOffset()

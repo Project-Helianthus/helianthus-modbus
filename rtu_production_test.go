@@ -94,6 +94,9 @@ func TestRTUProductionReadRetainsImmutableCorrelatedEvidence(t *testing.T) {
 	if len(got.Words) != 3 || got.Words[0] != 0x1234 || !ev.Current || ev.Generation != 1 || ev.Function != FunctionReadHoldingRegisters {
 		t.Fatalf("unexpected result %#v %#v", got, ev)
 	}
+	if ev.ReceiptWall.IsZero() {
+		t.Fatal("successful receipt has no wall time")
+	}
 	ev.RequestADU[0] = 9
 	again, ok := e.LastEvidence()
 	if !ok || again.RequestADU[0] == 9 {
@@ -111,10 +114,16 @@ func TestRTUProductionExceptionDoesNotFenceButShortWriteDoes(t *testing.T) {
 	if !errors.As(err, &pe) || pe.Kind != ErrorExceptionResponse || ev.Generation != 1 {
 		t.Fatalf("exception = %v evidence=%#v", err, ev)
 	}
+	if ev.ReceiptWall.IsZero() {
+		t.Fatal("exception receipt has no wall time")
+	}
 	stream.short = true
 	_, ev, err = e.Read(context.Background(), 1, req)
 	if !errors.Is(err, io.ErrShortWrite) || ev.Generation != 1 {
 		t.Fatalf("short=%v %#v", err, ev)
+	}
+	if !ev.ReceiptWall.IsZero() {
+		t.Fatal("short write fabricated receipt wall")
 	}
 	if _, _, err = e.Read(context.Background(), 1, req); err == nil {
 		t.Fatal("fenced successor accepted")

@@ -190,3 +190,64 @@ func TestRTUProductionRecoveryWaitsForRetiringReadOwnership(t *testing.T) {
 		t.Fatalf("successor lifecycle: fenced=%v inflight=%v generation=%d", e.fenced, e.inflight, e.generation)
 	}
 }
+
+func TestRTUProductionFourSequentialReadsRemainBounded(t *testing.T) {
+	stream := &productionStream{}
+	e := productionEndpoint(t, stream)
+	for index := 0; index < 4; index++ {
+		req, err := NewReadRegistersRequest(FunctionReadHoldingRegisters, uint16(index), 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		stream.bytes = productionReadResponse(t, 1, req, []uint16{uint16(index)})
+		got, evidence, err := e.Read(context.Background(), 1, req)
+		if err != nil || !evidence.Current || len(got.Words) != 1 || got.Words[0] != uint16(index) {
+			t.Fatalf("read %d: %v %#v %#v", index, err, got, evidence)
+		}
+	}
+	if len(stream.writes) != 4 {
+		t.Fatalf("writes=%d", len(stream.writes))
+	}
+}
+
+func TestRTUProductionCancellationFencesAndPartialFramesRetainEvidence(t *testing.T) {
+	stream := &productionStream{bytes: []byte{1, byte(FunctionReadHoldingRegisters), 2}}
+	e := productionEndpoint(t, stream)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, evidence, err := e.Read(ctx, 1, rtuReadRequest(t, FunctionReadHoldingRegisters))
+	if err == nil || evidence.Current || len(evidence.ResponseADU) != 3 {
+		t.Fatalf("cancel=%v %#v", err, evidence)
+	}
+	if _, _, err := e.Read(context.Background(), 1, rtuReadRequest(t, FunctionReadHoldingRegisters)); err == nil {
+		t.Fatal("fenced cancellation admitted successor")
+	}
+}
+
+func TestRTUProductionMalformedAndCRCFramesRemainTerminalEvidence(t *testing.T) {
+	req := rtuReadRequest(t, FunctionReadHoldingRegisters)
+	for _, frame := range [][]byte{{1, byte(req.Function()), 2}, func() []byte {
+		b := productionReadResponse(t, 1, req, []uint16{1, 2, 3})
+		b[len(b)-1] ^= 0xff
+		return b
+	}()} {
+		stream := &productionStream{bytes: frame}
+		e := productionEndpoint(t, stream)
+		_, evidence, err := e.Read(context.Background(), 1, req)
+		if err == nil || evidence.Current || len(evidence.ResponseADU) == 0 || evidence.ReceiptWall.IsZero() {
+			t.Fatalf("terminal frame=%x err=%v evidence=%#v", frame, err, evidence)
+		}
+	}
+}
+
+func TestRTUProductionRejectsTimingAndRecoveryBoundMismatch(t *testing.T) {
+	timing := rtuTestTiming(t, 9600)
+	stream := &productionStream{}
+	_, err := newRTUProductionEndpoint(RTUProductionConfig{Endpoint: "rtu-a", Serial: RTUSerialConfig{Path: "configured", Baud: 9600, DataBits: 8, Parity: RTUParityNone, StopBits: 1}, Timing: timing, ResponseTimeout: time.Millisecond, Enabled: true, Admission: productionAdmission(true)}, stream)
+	if err == nil {
+		t.Fatal("timing/recovery mismatch accepted")
+	}
+	if len(stream.writes) != 0 {
+		t.Fatal("invalid config wrote")
+	}
+}

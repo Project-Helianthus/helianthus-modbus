@@ -24,6 +24,7 @@ EXPECTED_POLICY = {
         "rtu_adu.go",
         "rtu_capability.go",
         "rtu_endpoint.go",
+        "rtu_production.go",
         "rtu_serial.go",
         "rtu_serial_linux.go",
         "rtu_serial_stub.go",
@@ -66,6 +67,7 @@ EXPECTED_POLICY = {
         "rtu_endpoint.go": (
             "5ec493f52dc4d7058589542fb532232036d235182e5f19530732ecad2b51bb61"
         ),
+        "rtu_production.go": "232a29c5b4751df22856adbdba60d245af4dd299d79bdcfce35370bab7e17e0b",
         "rtu_serial.go": "8bc0a0b696f4b5f3bbd5f20cfa66afffb16ba1e3ec8356de05470f43bb49ad61",
         "rtu_serial_linux.go": "2ebee9f012ae7e88714b78fe192938178a0a3cba4611ec167584b4bf385ae0b5",
         "rtu_serial_stub.go": "98a471cd37831225e9c34bd8bf315fdad831637282265df3e75db69aab9b1649",

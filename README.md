@@ -26,6 +26,35 @@ unqualified operation. Its public contract is
 merged at `35151979c8561d5dc4215030899277aec36d2f9f`; offline validation is
 not physical qualification, device compatibility, or support.
 
+The same endpoint can separately opt into one generic private-function
+exchange through `RTUProductionConfig.PrivateFunction` (an upstream
+`RTUPrivateFunctionAdmission` plus `MaxResponses` from 1 through 8). The zero
+value leaves it disabled and FC03/FC04 behavior unchanged.
+`ExchangePrivateFunction` accepts only function codes in the Modbus
+user-defined ranges 65-72 and 100-110 and only the single-attempt response
+policy; anything else, a broadcast unit, or a denied admission is `NO_SEND`
+before any byte is written. It shares the read path's single in-flight
+exchange, generation, request identifiers, fencing, and `Recover`. Each
+response frame must complete within the response timeout measured from the
+send or from the end of the previous frame. Every frame is checked for RTU
+integrity, unit, and function correlation before an optional caller-supplied
+`RTUPrivateFunctionResponseClassifier` marks it `Continue` or `Terminal`;
+without a classifier the first correlated frame is terminal. A correlated
+exception is terminal evidence without fencing. Write faults, timeouts,
+cancellation (including cancellation observed after the last frame, such as
+during classification), malformed, CRC-failed, or mismatched frames,
+classifier errors or panics, and exceeding `MaxResponses` fence the
+generation. `RTUPrivateFunctionEvidence` retains the request ADU and every
+received frame, including a partial or failing final frame, and is current
+only for a successful exchange in the current unfenced generation.
+`LastPrivateFunctionEvidence` keeps the latest receipt available as history
+but derives `Current` from the live lifecycle, so it reports false once that
+generation is fenced, recovered into a successor, or closed. The transport assigns
+no meaning to function codes or payloads: the request payload, the number and
+order of frames an operation produces, which frame is terminal, and whether
+the operation is read-only are facts the selected codec and its admission
+supply.
+
 `NewTCPEndpoint` is the single public construction root for the current
 read-only FC03/FC04 and FC2B/MEI type 0x0E runtime. It owns the connection
 pool, scheduler, transaction owners, reconnect backoff, monotonic clock, and

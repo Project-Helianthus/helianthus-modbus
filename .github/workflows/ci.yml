@@ -14,7 +14,8 @@ concurrency:
 
 jobs:
   checks:
-    runs-on: [self-hosted, synology]
+    # fork pull requests never run on the persistent runners
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-latest' || 'synology' }}
     timeout-minutes: 10
     env:
       GOFLAGS: -p=4
@@ -50,7 +51,8 @@ jobs:
           HELIANTHUS_EXTERNAL_LINT_JOB: "1"
 
   lint:
-    runs-on: [self-hosted, synology]
+    # fork pull requests never run on the persistent runners
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-latest' || 'synology' }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

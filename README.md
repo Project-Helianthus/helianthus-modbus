@@ -26,6 +26,16 @@ unqualified operation. Its public contract is
 merged at `35151979c8561d5dc4215030899277aec36d2f9f`; offline validation is
 not physical qualification, device compatibility, or support.
 
+`LastEvidence` preserves the latest FC03/FC04 receipt as history and derives
+`Current` under the endpoint mutex: only a successful receipt in the current
+open, unfenced generation is current. It reports false once that generation
+is fenced, closed, or replaced by recovery on either exchange path.
+Both read and private-function admission callbacks run without the endpoint
+mutex and may inspect either evidence getter. The pending admission reserves
+single-flight ownership; the endpoint rechecks its lifecycle and generation
+after admission returns and before sending. Admission execution time is
+caller-owned and is not bounded by `ResponseTimeout`.
+
 The same endpoint can separately opt into one generic private-function
 exchange through `RTUProductionConfig.PrivateFunction` (an upstream
 `RTUPrivateFunctionAdmission` plus `MaxResponses` from 1 through 8). The zero
@@ -36,8 +46,10 @@ policy; anything else, a broadcast unit, or a denied admission is `NO_SEND`
 before any byte is written. It shares the read path's single in-flight
 exchange, generation, request identifiers, fencing, and `Recover`. Each
 response frame must complete within the response timeout measured from the
-send or from the end of the previous frame. Every frame is checked for RTU
-integrity, unit, and function correlation before an optional caller-supplied
+send or, for the next frame, after the caller's classification of the previous
+frame returns. `ResponseTimeout` does not bound caller classification time.
+Every frame is checked for RTU integrity, unit, and function correlation
+before an optional caller-supplied
 `RTUPrivateFunctionResponseClassifier` marks it `Continue` or `Terminal`;
 without a classifier the first correlated frame is terminal. A correlated
 exception is terminal evidence without fencing. Write faults, timeouts,

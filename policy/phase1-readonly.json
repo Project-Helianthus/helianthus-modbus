@@ -59,8 +59,8 @@
     "tcp_pool.go": "bdbc8f871915f1173d67a211dcff8572516e071cdb3d1793a463f5598c8e7114",
     "tcp_scheduler.go": "5429a20ac9ab2410224c79f47cdfeac712e3f613844f476a13ce8a5ab21e27a9",
     "tcp_transport.go": "935104fd4086a016241fa8358be885aa99c55f80d220a03255e42b31e1c4fca4",
-    "rtu_production.go": "43901e2b847d20ada4bd07c2c71d2aeeace035dd03186fc837ba634bd512013d",
-    "rtu_production_private.go": "f02dab0ba2b919e1f60c8cddeef3d4b8feb5390409d4527d78e86ba4cccafebc"
+    "rtu_production.go": "5b47be95399c21420f19941f754a63a0d74ef10cbee303f9567e82d34d3c2673",
+    "rtu_production_private.go": "a31fdf68d28e6b4ad5d49ac63ffebb423c872d7c47367b54d868e4107d219f87"
   },
   "trusted_go_tool_sha256": {
     "scripts/acceptance_evidence/main.go": "903cfc5df5569c316186032ab2da644dcb664a51548b064e3d3e67c945b96880",

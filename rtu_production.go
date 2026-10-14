@@ -9,7 +9,9 @@ import (
 )
 
 // RTUProductionConfig configures one opt-in, vendor-neutral FC03/FC04 endpoint.
-// Endpoint is a public label, never the serial path.
+// Endpoint is a public label, never the serial path. PrivateFunction is a
+// separate opt-in; its zero value leaves the private-function exchange
+// disabled and FC03/FC04 behavior unchanged.
 type RTUProductionConfig struct {
 	Endpoint        string
 	Serial          RTUSerialConfig
@@ -17,6 +19,7 @@ type RTUProductionConfig struct {
 	ResponseTimeout time.Duration
 	Enabled         bool
 	Admission       RTUReadAdmission
+	PrivateFunction RTUPrivateFunctionConfig
 }
 
 // RTUReadAdmission is an upstream-owned, fail-closed decision. It carries no
@@ -77,6 +80,9 @@ type RTUProductionEndpoint struct {
 	quarantineUntil   time.Duration
 	last              RTUReadEvidence
 	haveLast          bool
+	private           RTUPrivateFunctionConfig
+	lastPrivate       RTUPrivateFunctionEvidence
+	haveLastPrivate   bool
 }
 
 // OpenRTUProductionEndpoint opens the explicit Linux serial configuration only
@@ -101,7 +107,7 @@ func newRTUProductionEndpoint(config RTUProductionConfig, stream RTUByteStream) 
 	if err := validateRTUProductionConfig(config); err != nil || stream == nil {
 		return nil, protocolError(ErrorInvalidRequest, 0, 0, "rtu_production_config", -1)
 	}
-	return &RTUProductionEndpoint{endpoint: config.Endpoint, stream: stream, timing: config.Timing, timeout: config.ResponseTimeout, generation: 1, admission: config.Admission}, nil
+	return &RTUProductionEndpoint{endpoint: config.Endpoint, stream: stream, timing: config.Timing, timeout: config.ResponseTimeout, generation: 1, admission: config.Admission, private: config.PrivateFunction}, nil
 }
 
 func validateRTUProductionConfig(config RTUProductionConfig) error {
@@ -110,7 +116,7 @@ func validateRTUProductionConfig(config RTUProductionConfig) error {
 		bits++
 	}
 	limit := config.ResponseTimeout + config.Timing.InterFrame()
-	if limit < config.ResponseTimeout || !config.Enabled || config.Endpoint == "" || config.Admission == nil || config.Serial.Validate() != nil || config.Serial.Baud != config.Timing.baud || bits != config.Timing.bitsPerCharacter || config.ResponseTimeout <= 0 || config.ResponseTimeout > 30*time.Second || config.Timing.MaxResponseLatency() <= 0 || config.Timing.MaxResponseLatency() > config.ResponseTimeout || config.Timing.MaxQuiescence() <= config.Timing.MaxResponseLatency() || config.Timing.MaxQuiescence() > limit || config.Timing.MaxQuiescence() > 60*time.Second {
+	if limit < config.ResponseTimeout || !config.Enabled || config.Endpoint == "" || config.Admission == nil || config.Serial.Validate() != nil || config.Serial.Baud != config.Timing.baud || bits != config.Timing.bitsPerCharacter || config.ResponseTimeout <= 0 || config.ResponseTimeout > 30*time.Second || config.Timing.MaxResponseLatency() <= 0 || config.Timing.MaxResponseLatency() > config.ResponseTimeout || config.Timing.MaxQuiescence() <= config.Timing.MaxResponseLatency() || config.Timing.MaxQuiescence() > limit || config.Timing.MaxQuiescence() > 60*time.Second || validateRTUPrivateFunctionConfig(config.PrivateFunction) != nil {
 		return protocolError(ErrorInvalidRequest, 0, 0, "rtu_production_config", -1)
 	}
 	return nil
@@ -224,18 +230,24 @@ func (e *RTUProductionEndpoint) finish(ev RTUReadEvidence, response []byte, rece
 	ev.ReceivedAt = e.stream.RTUOffset()
 	ev.Current = outcome == "success" && !fence && !e.closed && !e.fenced
 	if fence {
-		e.fenced = true
-		now := e.stream.RTUOffset()
-		until := now + e.timing.MaxResponseLatency()
-		if until < now {
-			e.closed = true
-		} else {
-			e.quarantineUntil = until
-		}
+		e.fenceLocked()
 	}
 	e.last = ev.copy()
 	e.haveLast = true
 	return ev.copy()
+}
+
+// fenceLocked retires the current generation after a possibly transmitted
+// exchange and sets the quarantine bound that recovery must outlast.
+func (e *RTUProductionEndpoint) fenceLocked() {
+	e.fenced = true
+	now := e.stream.RTUOffset()
+	until := now + e.timing.MaxResponseLatency()
+	if until < now {
+		e.closed = true
+	} else {
+		e.quarantineUntil = until
+	}
 }
 
 // Recover performs exactly one bounded quiet recovery and creates a successor generation.

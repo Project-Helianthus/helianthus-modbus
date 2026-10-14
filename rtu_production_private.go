@@ -37,6 +37,10 @@ func validateRTUPrivateFunctionConfig(config RTUPrivateFunctionConfig) error {
 // operation qualification must admit only operations it has qualified for
 // this endpoint and unit. The transport cannot tell whether a private
 // operation changes device state; that classification belongs upstream.
+// Like RTUReadAdmission, the callback runs without the endpoint mutex while
+// reserving single-flight ownership. It may inspect either evidence getter;
+// the endpoint rechecks the admitted generation before sending. Its execution
+// time is caller-owned and is not bounded by ResponseTimeout.
 type RTUPrivateFunctionAdmission interface {
 	AdmitRTUPrivateFunction(RTUPrivateFunctionAdmissionRequest) bool
 }
@@ -125,9 +129,10 @@ func productionPrivateFunctionCode(code PrivateFunctionCode) bool {
 // classifier, each correlated normal frame is passed to it in order until it
 // returns RTUPrivateFunctionTerminal; reaching the configured MaxResponses
 // without a terminal frame is a fenced "response_bound" fault. Each frame must
-// complete within the response timeout measured from the send or from the end
-// of the previous frame, so one exchange is bounded by MaxResponses response
-// timeouts plus caller classification time.
+// complete within the response timeout measured from the send or, for the next
+// frame, after classification of the previous frame returns. ResponseTimeout
+// does not bound caller classification time; the response phase is bounded by
+// MaxResponses response timeouts plus caller classification time.
 //
 // A correlated exception is terminal evidence and does not fence. A write
 // fault, timeout, cancellation, read fault, malformed, CRC-failed, unit or
@@ -161,15 +166,24 @@ func (e *RTUProductionEndpoint) ExchangePrivateFunction(
 	admission := e.private.Admission
 	maxResponses := e.private.MaxResponses
 	candidate := RTUPrivateFunctionAdmissionRequest{Endpoint: e.endpoint, Generation: e.generation, UnitID: unit, Function: function, Payload: request.Payload()}
-	if admission == nil || !admission.AdmitRTUPrivateFunction(candidate) {
+	if admission == nil {
 		e.mu.Unlock()
 		return nil, RTUPrivateFunctionEvidence{}, protocolError(ErrorInvalidRequest, FunctionCode(function.Byte()), 0, "rtu_private_function_admission", -1)
 	}
 	e.inflight = true
+	e.mu.Unlock()
+	defer func() { e.mu.Lock(); e.inflight = false; e.mu.Unlock() }()
+	if !admission.AdmitRTUPrivateFunction(candidate) {
+		return nil, RTUPrivateFunctionEvidence{}, protocolError(ErrorInvalidRequest, FunctionCode(function.Byte()), 0, "rtu_private_function_admission", -1)
+	}
+	e.mu.Lock()
+	if e.closed || e.fenced || e.generation != candidate.Generation {
+		e.mu.Unlock()
+		return nil, RTUPrivateFunctionEvidence{}, errRTUSessionState
+	}
 	e.nextID++
 	evidence := RTUPrivateFunctionEvidence{Endpoint: e.endpoint, Generation: e.generation, RequestID: e.nextID, UnitID: unit, Function: function, RequestADU: cloneBytes(frame), SentAt: e.stream.RTUOffset(), ClockEpoch: "system-monotonic-v1"}
 	e.mu.Unlock()
-	defer func() { e.mu.Lock(); e.inflight = false; e.mu.Unlock() }()
 
 	written, writeErr := e.stream.WriteRTU(ctx, frame)
 	if writeErr != nil || written != len(frame) {

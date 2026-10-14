@@ -24,6 +24,10 @@ type RTUProductionConfig struct {
 
 // RTUReadAdmission is an upstream-owned, fail-closed decision. It carries no
 // vendor/profile meaning and does not mint or persist transport authority.
+// The callback runs without the endpoint mutex while reserving single-flight
+// ownership, so it may inspect either evidence getter. Before any send the
+// endpoint rechecks that the admitted generation is still open and unfenced.
+// Callback execution time is caller-owned and is not bounded by ResponseTimeout.
 type RTUReadAdmission interface {
 	AdmitRTURead(RTUReadAdmissionRequest) bool
 }
@@ -138,15 +142,20 @@ func (e *RTUProductionEndpoint) Read(ctx context.Context, unit byte, request Rea
 	}
 	admission := e.admission
 	candidate := RTUReadAdmissionRequest{Endpoint: e.endpoint, Generation: e.generation, UnitID: unit, Function: request.Function(), Offset: request.Offset(), Quantity: request.Quantity()}
+	e.inflight = true
+	e.mu.Unlock()
+	defer func() { e.mu.Lock(); e.inflight = false; e.mu.Unlock() }()
 	if !admission.AdmitRTURead(candidate) {
-		e.mu.Unlock()
 		return ReadRegistersResponse{}, RTUReadEvidence{}, protocolError(ErrorInvalidRequest, request.Function(), 0, "rtu_read_admission", -1)
 	}
-	e.inflight = true
+	e.mu.Lock()
+	if e.closed || e.fenced || e.generation != candidate.Generation {
+		e.mu.Unlock()
+		return ReadRegistersResponse{}, RTUReadEvidence{}, errRTUSessionState
+	}
 	e.nextID++
 	evidence := RTUReadEvidence{Endpoint: e.endpoint, Generation: e.generation, RequestID: e.nextID, UnitID: unit, Function: request.Function(), Offset: request.Offset(), Quantity: request.Quantity(), RequestADU: cloneBytes(frame), SentAt: e.stream.RTUOffset(), ClockEpoch: "system-monotonic-v1"}
 	e.mu.Unlock()
-	defer func() { e.mu.Lock(); e.inflight = false; e.mu.Unlock() }()
 	written, writeErr := e.stream.WriteRTU(ctx, frame)
 	if writeErr != nil || written != len(frame) {
 		if writeErr == nil {
@@ -294,10 +303,14 @@ func (e *RTUProductionEndpoint) Recover(ctx context.Context) error {
 }
 
 // LastEvidence returns a copy; historical evidence cannot be rebound to a read.
+// Current stays true only for a successful receipt in the endpoint's current
+// unfenced, unclosed generation.
 func (e *RTUProductionEndpoint) LastEvidence() (RTUReadEvidence, bool) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	return e.last.copy(), e.haveLast
+	evidence := e.last.copy()
+	evidence.Current = evidence.Current && evidence.Generation == e.generation && !e.closed && !e.fenced
+	return evidence, e.haveLast
 }
 
 // Close fences the current generation and releases the owned stream when possible.

@@ -218,6 +218,12 @@ func (e *RTUProductionEndpoint) ExchangePrivateFunction(
 			}
 		}
 		if disposition == RTUPrivateFunctionTerminal {
+			// Cancellation observed after the last frame (for example during
+			// caller classification) never publishes success: the frames stay
+			// evidence and the generation is fenced.
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return nil, e.finishPrivate(evidence, receiptWall, true, "transport_fault", true), ctxErr
+			}
 			return responses, e.finishPrivate(evidence, receiptWall, true, "success", false), nil
 		}
 		if len(responses) >= maxResponses {
@@ -310,8 +316,12 @@ func (e *RTUProductionEndpoint) finishPrivate(ev RTUPrivateFunctionEvidence, rec
 
 // LastPrivateFunctionEvidence returns a copy of the latest private-function
 // receipt. It is historical and cannot be rebound to a successor exchange.
+// Current is derived from the live lifecycle: it stays true only while the
+// receipt's generation is still the endpoint's unfenced, unclosed generation.
 func (e *RTUProductionEndpoint) LastPrivateFunctionEvidence() (RTUPrivateFunctionEvidence, bool) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	return e.lastPrivate.copy(), e.haveLastPrivate
+	evidence := e.lastPrivate.copy()
+	evidence.Current = evidence.Current && evidence.Generation == e.generation && !e.closed && !e.fenced
+	return evidence, e.haveLastPrivate
 }

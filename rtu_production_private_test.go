@@ -536,3 +536,75 @@ func TestRTUProductionPrivateFunctionSharesSingleFlightGenerationAndCorrelation(
 		t.Fatalf("exchange after close = %v", err)
 	}
 }
+
+func TestRTUProductionPrivateFunctionCancellationDuringClassificationFences(t *testing.T) {
+	request := privateProductionRequest(t, privateProductionCode, privateProductionPayload)
+	frame := privateProductionFrame(t, 1, privateProductionCode, []byte{0x01})
+	stream := &privateProductionStream{}
+	stream.queue(frame)
+	e := privateProductionEndpoint(t, stream, &privateProductionAdmission{admit: true}, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cancelling := privateClassifierFunc(func(RTUPrivateFunctionResponseADU) (RTUPrivateFunctionDisposition, error) {
+		cancel()
+		return RTUPrivateFunctionTerminal, nil
+	})
+	responses, evidence, err := e.ExchangePrivateFunction(ctx, 1, request, DefaultPrivateFunctionResponsePolicy(), cancelling)
+	if !errors.Is(err, context.Canceled) || responses != nil || evidence.Current || evidence.TerminalOutcome != "transport_fault" {
+		t.Fatalf("cancel during classification = %v %#v %#v", err, responses, evidence)
+	}
+	if len(evidence.ResponseADUs) != 1 || !bytes.Equal(evidence.ResponseADUs[0], frame) || !evidence.IntegrityValid || evidence.ReceiptWall.IsZero() {
+		t.Fatalf("cancelled exchange lost frame evidence: %#v", evidence)
+	}
+	if last, ok := e.LastPrivateFunctionEvidence(); !ok || last.Current {
+		t.Fatalf("stored evidence current after cancellation: %#v", last)
+	}
+	assertPrivateFenced(t, e, stream, request)
+}
+
+func TestRTUProductionPrivateFunctionEvidenceRetiresWithGeneration(t *testing.T) {
+	request := privateProductionRequest(t, privateProductionCode, privateProductionPayload)
+	frame := privateProductionFrame(t, 1, privateProductionCode, []byte{0x01})
+
+	t.Run("read fault and recover", func(t *testing.T) {
+		stream := &privateProductionStream{}
+		stream.queue(frame)
+		e := privateProductionEndpoint(t, stream, &privateProductionAdmission{admit: true}, 1)
+		if _, evidence, err := e.ExchangePrivateFunction(context.Background(), 1, request, DefaultPrivateFunctionResponsePolicy(), nil); err != nil || !evidence.Current {
+			t.Fatalf("exchange = %v %#v", err, evidence)
+		}
+		if last, ok := e.LastPrivateFunctionEvidence(); !ok || !last.Current || last.Generation != 1 {
+			t.Fatalf("fresh evidence = %#v", last)
+		}
+		// An FC03 timeout fences generation one.
+		if _, _, err := e.Read(context.Background(), 1, rtuReadRequest(t, FunctionReadHoldingRegisters)); !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("read timeout = %v", err)
+		}
+		if last, ok := e.LastPrivateFunctionEvidence(); !ok || last.Current {
+			t.Fatalf("evidence current while fenced: %#v", last)
+		}
+		if err := e.Recover(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		last, ok := e.LastPrivateFunctionEvidence()
+		if !ok || last.Current || last.Generation != 1 || last.TerminalOutcome != "success" || len(last.ResponseADUs) != 1 || !bytes.Equal(last.ResponseADUs[0], frame) {
+			t.Fatalf("retired-generation evidence after recover: %#v", last)
+		}
+	})
+
+	t.Run("close", func(t *testing.T) {
+		stream := &privateProductionStream{}
+		stream.queue(frame)
+		e := privateProductionEndpoint(t, stream, &privateProductionAdmission{admit: true}, 1)
+		if _, _, err := e.ExchangePrivateFunction(context.Background(), 1, request, DefaultPrivateFunctionResponsePolicy(), nil); err != nil {
+			t.Fatal(err)
+		}
+		if err := e.Close(); err != nil {
+			t.Fatal(err)
+		}
+		last, ok := e.LastPrivateFunctionEvidence()
+		if !ok || last.Current || last.Generation != 1 || last.TerminalOutcome != "success" || len(last.ResponseADUs) != 1 {
+			t.Fatalf("evidence after close: %#v", last)
+		}
+	})
+}

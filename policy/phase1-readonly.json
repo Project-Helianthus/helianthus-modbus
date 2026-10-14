@@ -68,7 +68,7 @@
   },
   "trusted_python_tool_sha256": {
     "scripts/validate_m1_02_acceptance.py": "f64e579546bb49c22cdc092cae63d297d846e7e0d31aa46a91bddacc20b69092",
-    "scripts/validate_m1_03_acceptance.py": "c3b476c1101b09b38bd03c48ede98a288f07bc3d81b6a623a2fa301172f32589",
+    "scripts/validate_m1_03_acceptance.py": "6d55e765417fa4b75530a7657e8b7c549051da584593904899a9531674a3e6cc",
     "scripts/validate_m1_04_acceptance.py": "67eefbf1db0b90cf172e627ad9c21a1a6641d8231500504d7f3b3e9f55d93add",
     "scripts/validate_m1_06_conformance.py": "8b22bfcfccecc23e6aa0c9c4661a0ca6d98f45f7813afca9e78c1af9a4b544d6"
   },

@@ -17,6 +17,16 @@ import (
 
 func linuxTestPTY(t *testing.T) (*os.File, string) {
 	t.Helper()
+	reason, err := rtuPTYPreflight(func(path string) error {
+		_, err := os.Stat(path)
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reason != "" {
+		t.Skip(reason)
+	}
 	fd, err := syscall.Open("/dev/ptmx", syscall.O_RDWR|syscall.O_NOCTTY|syscall.O_NONBLOCK|syscall.O_CLOEXEC, 0)
 	if err != nil {
 		t.Fatalf("open Linux PTY: %v", err)

@@ -16,7 +16,7 @@ func k18Equal(t *testing.T, label string, got, want []byte) {
 
 func k18Mutate(b []byte) {
 	for i := range b {
-		b[i] ^= 0xff
+		b[i] += 0x55
 	}
 }
 

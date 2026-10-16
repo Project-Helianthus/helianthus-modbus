@@ -68,16 +68,16 @@ EXPECTED_POLICY = {
         "rtu_endpoint.go": (
             "5ec493f52dc4d7058589542fb532232036d235182e5f19530732ecad2b51bb61"
         ),
-        "rtu_production.go": "5b47be95399c21420f19941f754a63a0d74ef10cbee303f9567e82d34d3c2673",
+        "rtu_production.go": "d50e4719c2a6a876750cef8367ec4463b7ebbe8293908b271592db743d8395b4",
         "rtu_production_private.go": "a31fdf68d28e6b4ad5d49ac63ffebb423c872d7c47367b54d868e4107d219f87",
         "rtu_serial.go": "8bc0a0b696f4b5f3bbd5f20cfa66afffb16ba1e3ec8356de05470f43bb49ad61",
-        "rtu_serial_linux.go": "2ebee9f012ae7e88714b78fe192938178a0a3cba4611ec167584b4bf385ae0b5",
+        "rtu_serial_linux.go": "432bbffbfc3e74e0b474d99784a446af3fe5540fd33e7d2e8a725c550801adda",
         "rtu_serial_stub.go": "98a471cd37831225e9c34bd8bf315fdad831637282265df3e75db69aab9b1649",
         "rtu_session.go": (
             "1621aba290efc6f701d660a00173f22a258fd63f5679748f0547fea50e469f74"
         ),
         "rtu_timing.go": (
-            "daea0680aa70f1a552fc6facdd35e54161728c673625088c599951d560155231"
+            "74a69ceafb02ff20db5b733733a783d57b87d501db6d2c8cd8ade6cebb005e49"
         ),
         "runtime_acquisition.go": (
             "efa2aa5125d203dbf2bcd95330a279ee32e10ef6cb0f74d9fe030ec666112c0e"

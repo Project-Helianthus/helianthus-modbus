@@ -9,6 +9,10 @@ const (
 	rtuFixedInterCharacter = 750 * time.Microsecond
 	rtuFixedInterFrame     = 1750 * time.Microsecond
 	rtuFixedTimerBaudFloor = 19200
+	// Host receipt timestamps include USB transfer batching and scheduling.
+	// Only length-delimited production FC03/FC04 reads use this allowance;
+	// it makes no claim about physical wire timing or qualification.
+	rtuHostInterCharacter = 20 * time.Millisecond
 )
 
 // RTUParity identifies the parity bit in an RTU serial format.
@@ -22,10 +26,15 @@ const (
 
 // RTUTimingConfig defines fixture timing and finite quarantine bounds.
 type RTUTimingConfig struct {
-	Baud                 uint32
-	DataBits             uint8
-	Parity               RTUParity
-	StopBits             uint8
+	Baud     uint32
+	DataBits uint8
+	Parity   RTUParity
+	StopBits uint8
+	// InterCharacterSafety also overrides the production typed-read host gap
+	// allowance (default max(t1.5, 20ms)). To select a larger value, increase
+	// InterFrameSafety too: the existing t1.5 < t3.5 validation still applies.
+	// Generic frame decoders and opaque sessions use t1.5 plus its configured
+	// safety increase, without the host allowance.
 	InterCharacterSafety time.Duration
 	InterFrameSafety     time.Duration
 	MaxResponseLatency   time.Duration
@@ -39,6 +48,7 @@ type RTUTiming struct {
 	characterTime      time.Duration
 	interCharacter     time.Duration
 	interFrame         time.Duration
+	readInterCharacter time.Duration
 	maxResponseLatency time.Duration
 	maxQuiescence      time.Duration
 }
@@ -143,12 +153,17 @@ func NewRTUTiming(config RTUTimingConfig) (RTUTiming, error) {
 			-1,
 		)
 	}
+	readInterCharacter := interCharacter
+	if config.InterCharacterSafety == 0 && readInterCharacter < rtuHostInterCharacter {
+		readInterCharacter = rtuHostInterCharacter
+	}
 	return RTUTiming{
 		baud:               config.Baud,
 		bitsPerCharacter:   bits,
 		characterTime:      character,
 		interCharacter:     interCharacter,
 		interFrame:         interFrame,
+		readInterCharacter: readInterCharacter,
 		maxResponseLatency: config.MaxResponseLatency,
 		maxQuiescence:      config.MaxQuiescence,
 	}, nil

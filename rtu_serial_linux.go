@@ -20,6 +20,9 @@ const rtuSerialPollInterval = 10 * time.Millisecond
 // this adapter.
 const rtuSerialLinuxBaudMask uint32 = 0x100f
 
+// A zero CIBAUD makes the input rate follow the configured output rate.
+const rtuSerialLinuxInputBaudMask uint32 = rtuSerialLinuxBaudMask << 16
+
 // OpenRTUSerial opens and configures one explicitly named Linux serial endpoint.
 // It creates no registry profile and does not make any operation admissible.
 func OpenRTUSerial(config RTUSerialConfig) (*RTUSerialStream, error) {
@@ -55,7 +58,7 @@ func configureRTUSerialFD(fd int, config RTUSerialConfig) error {
 	termios.Iflag &^= syscall.IGNBRK | syscall.BRKINT | syscall.PARMRK | syscall.ISTRIP | syscall.INLCR | syscall.IGNCR | syscall.ICRNL | syscall.IXON
 	termios.Oflag &^= syscall.OPOST
 	termios.Lflag &^= syscall.ECHO | syscall.ECHONL | syscall.ICANON | syscall.ISIG | syscall.IEXTEN
-	termios.Cflag &^= syscall.CSIZE | syscall.PARENB | syscall.PARODD | syscall.CSTOPB | rtuSerialLinuxBaudMask
+	termios.Cflag &^= syscall.CSIZE | syscall.PARENB | syscall.PARODD | syscall.CSTOPB | rtuSerialLinuxBaudMask | rtuSerialLinuxInputBaudMask
 	termios.Cflag |= syscall.CREAD | syscall.CLOCAL | syscall.CS8 | speed
 	if config.Parity != RTUParityNone {
 		termios.Cflag |= syscall.PARENB
@@ -66,7 +69,10 @@ func configureRTUSerialFD(fd int, config RTUSerialConfig) error {
 	if config.StopBits == 2 {
 		termios.Cflag |= syscall.CSTOPB
 	}
-	termios.Cc[syscall.VMIN] = 0
+	// With O_NONBLOCK, VMIN=1 yields EAGAIN while idle, letting Go's poller
+	// enforce deadlines. VMIN=0 yields a zero-byte read, indistinguishable
+	// from a genuine hangup (EOF); hangups must remain terminal faults.
+	termios.Cc[syscall.VMIN] = 1
 	termios.Cc[syscall.VTIME] = 0
 	if _, _, errno := syscall.Syscall(syscall.SYS_IOCTL, uintptr(fd), uintptr(syscall.TCSETS), uintptr(unsafe.Pointer(&termios))); errno != 0 {
 		return errno

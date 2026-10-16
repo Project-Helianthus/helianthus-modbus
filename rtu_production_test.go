@@ -1,6 +1,7 @@
 package modbus
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -8,6 +9,199 @@ import (
 	"testing"
 	"time"
 )
+
+// chunkedReadStream models host delivery, including a pending transfer that
+// outlives a read deadline. The serial wire timing is deliberately unknown.
+type chunkedReadStream struct {
+	frame    []byte
+	index    int
+	gap      time.Duration
+	chunk    int
+	started  time.Time
+	ready    time.Time
+	lastByte time.Duration
+}
+
+func (s *chunkedReadStream) WriteRTU(_ context.Context, frame []byte) (int, error) {
+	s.started = time.Now()
+	return len(frame), nil
+}
+
+func (s *chunkedReadStream) RTUOffset() time.Duration {
+	if s.started.IsZero() {
+		return 0
+	}
+	return time.Since(s.started)
+}
+
+func (s *chunkedReadStream) ReadRTUByte(ctx context.Context) (byte, time.Duration, error) {
+	if s.index == len(s.frame) {
+		<-ctx.Done()
+		return 0, s.RTUOffset(), ctx.Err()
+	}
+	if s.ready.IsZero() && s.index%s.chunk == 0 {
+		s.ready = time.Now().Add(s.gap)
+	}
+	if !s.ready.IsZero() {
+		timer := time.NewTimer(time.Until(s.ready))
+		defer timer.Stop()
+		select {
+		case <-ctx.Done():
+			return 0, s.RTUOffset(), ctx.Err()
+		case <-timer.C:
+			s.ready = time.Time{}
+		}
+	}
+	v := s.frame[s.index]
+	s.index++
+	s.lastByte = s.RTUOffset()
+	return v, s.lastByte, nil
+}
+
+func chunkedReadEndpoint(t *testing.T, stream RTUByteStream, safety time.Duration) *RTUProductionEndpoint {
+	t.Helper()
+	config := RTUTimingConfig{Baud: 115200, DataBits: 8, Parity: RTUParityNone, StopBits: 1,
+		MaxResponseLatency: time.Second, MaxQuiescence: time.Second + time.Millisecond}
+	if safety != 0 {
+		config.InterCharacterSafety = safety
+		config.InterFrameSafety = safety + time.Millisecond
+	}
+	timing, err := NewRTUTiming(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e, err := newRTUProductionEndpoint(RTUProductionConfig{Endpoint: "synthetic-rtu", Enabled: true,
+		Serial: RTUSerialConfig{Path: "configured", Baud: 115200, DataBits: 8, Parity: RTUParityNone, StopBits: 1},
+		Timing: timing, ResponseTimeout: time.Second, Admission: productionAdmission(true)}, stream)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return e
+}
+
+func TestRTUProductionLengthFramingAcceptsHostTransferGaps(t *testing.T) {
+	for _, function := range []FunctionCode{FunctionReadHoldingRegisters, FunctionReadInputRegisters} {
+		for _, exception := range []bool{false, true} {
+			req, err := NewReadRegistersRequest(function, 0, 125)
+			if err != nil {
+				t.Fatal(err)
+			}
+			words := make([]uint16, 125)
+			for i := range words {
+				words[i] = uint16(i + 1)
+			}
+			frame := productionReadResponse(t, 1, req, words)
+			chunk := 64
+			if exception {
+				frame = productionException(t, 1, function)
+				chunk = 1
+			}
+			s := &chunkedReadStream{frame: frame, chunk: chunk, gap: 4 * time.Millisecond}
+			e := chunkedReadEndpoint(t, s, 0)
+			response, ev, err := e.Read(context.Background(), 1, req)
+			if exception {
+				var pe *ProtocolError
+				if !errors.As(err, &pe) || pe.Kind != ErrorExceptionResponse || !ev.IntegrityValid || e.fenced {
+					t.Fatalf("exception: %v %#v", err, ev)
+				}
+			} else if err != nil || !ev.Current || len(response.Words) != 125 || response.Words[124] != 125 {
+				t.Fatalf("long response: %v %#v", err, ev)
+			}
+			if !bytes.Equal(ev.ResponseADU, frame) {
+				t.Fatal("raw evidence changed")
+			}
+			if s.RTUOffset()-s.lastByte < e.timing.InterFrame() {
+				t.Fatal("completed before t3.5 guard")
+			}
+		}
+	}
+}
+
+func TestRTUProductionLengthFramingRejectsCorruptionAndTruncation(t *testing.T) {
+	req, err := NewReadRegistersRequest(FunctionReadHoldingRegisters, 0, 125)
+	if err != nil {
+		t.Fatal(err)
+	}
+	valid := productionReadResponse(t, 1, req, make([]uint16, 125))
+	badCRC := cloneBytes(valid)
+	badCRC[len(badCRC)-1] ^= 1
+	shortWithCRC := rtuTestFrame(1, 3, 250, 0, 1)
+	for name, frame := range map[string][]byte{
+		"crc": badCRC, "truncated": valid[:len(valid)-1], "short with valid crc": shortWithCRC,
+		"trailing": append(cloneBytes(valid), 0), "wrong function": rtuTestFrame(1, 4, 2, 0, 1),
+		"wrong unit": rtuTestFrame(2, 3, 2, 0, 1), "wrong count": rtuTestFrame(1, 3, 2, 0, 1),
+		"odd count": rtuTestFrame(1, 3, 1, 0), "zero count": rtuTestFrame(1, 3, 0),
+		"oversized count": rtuTestFrame(1, 3, 252), "header only": {1, 3},
+		"exception truncated": {1, 0x83, 2, 0},
+		"concatenated":        append(cloneBytes(valid), valid...),
+	} {
+		t.Run(name, func(t *testing.T) {
+			s := &chunkedReadStream{frame: frame, chunk: 64, gap: 4 * time.Millisecond}
+			e := chunkedReadEndpoint(t, s, 0)
+			_, ev, err := e.Read(context.Background(), 1, req)
+			if err == nil || ev.Current || ev.IntegrityValid || !e.fenced || len(ev.ResponseADU) == 0 {
+				t.Fatalf("accepted malformed frame: %v %#v", err, ev)
+			}
+			if !bytes.Equal(ev.ResponseADU, frame[:len(ev.ResponseADU)]) {
+				t.Fatal("partial evidence changed")
+			}
+		})
+	}
+}
+
+func TestRTUProductionLengthFramingHonorsConfiguredGap(t *testing.T) {
+	req := rtuReadRequest(t, FunctionReadHoldingRegisters)
+	frame := productionReadResponse(t, 1, req, []uint16{1, 2, 3})
+	for _, tc := range []struct {
+		gap, safety time.Duration
+		accepted    bool
+	}{
+		{4 * time.Millisecond, 10 * time.Millisecond, true},
+		{15 * time.Millisecond, 3 * time.Millisecond, false},
+		{50 * time.Millisecond, 0, false},
+	} {
+		s := &chunkedReadStream{frame: frame, chunk: 3, gap: tc.gap}
+		e := chunkedReadEndpoint(t, s, tc.safety)
+		_, _, err := e.Read(context.Background(), 1, req)
+		if (err == nil) != tc.accepted {
+			t.Fatalf("gap=%s safety=%s: %v", tc.gap, tc.safety, err)
+		}
+	}
+}
+
+func TestRTUProductionReadResponseHeaderLengths(t *testing.T) {
+	for _, function := range []FunctionCode{FunctionReadHoldingRegisters, FunctionReadInputRegisters} {
+		for _, quantity := range []uint16{1, 125} {
+			req, err := NewReadRegistersRequest(function, 0, quantity)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, frame := range [][]byte{
+				productionReadResponse(t, 1, req, make([]uint16, int(quantity))),
+				productionException(t, 1, function),
+			} {
+				for end := 0; end <= len(frame); end++ {
+					got, err := rtuReadResponseLength(req, frame[:end])
+					want := len(frame)
+					if end < 2 || (end < 3 && frame[1]&0x80 == 0) {
+						want = 0
+					}
+					if err != nil || got != want {
+						t.Fatalf("prefix %d: length=%d want=%d err=%v", end, got, want, err)
+					}
+				}
+				if _, err := rtuReadResponseLength(req, append(cloneBytes(frame), 0)); err == nil {
+					t.Fatal("trailing byte accepted")
+				}
+			}
+			for _, header := range [][]byte{{1, 6}, {1, 0x86}, {1, byte(function), 0}, {1, byte(function), 251}} {
+				if _, err := rtuReadResponseLength(req, header); err == nil {
+					t.Fatalf("invalid header accepted: %x", header)
+				}
+			}
+		}
+	}
+}
 
 type productionStream struct {
 	mu     sync.Mutex
@@ -75,7 +269,7 @@ func productionEndpoint(t *testing.T, stream RTUByteStream) *RTUProductionEndpoi
 	if err != nil {
 		t.Fatal(err)
 	}
-	e, err := newRTUProductionEndpoint(RTUProductionConfig{Endpoint: "rtu-a", Serial: RTUSerialConfig{Path: "configured", Baud: 9600, DataBits: 8, Parity: RTUParityEven, StopBits: 1}, Timing: timing, ResponseTimeout: 20 * time.Millisecond, Enabled: true, Admission: productionAdmission(true)}, stream)
+	e, err := newRTUProductionEndpoint(RTUProductionConfig{Endpoint: "rtu-a", Serial: RTUSerialConfig{Path: "configured", Baud: 9600, DataBits: 8, Parity: RTUParityEven, StopBits: 1}, Timing: timing, ResponseTimeout: productionTestContextBudget(timing.MaxResponseLatency(), timing), Enabled: true, Admission: productionAdmission(true)}, stream)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -294,5 +488,28 @@ func TestRTUProductionRejectsRecoveryBoundsAndNoByteTimeout(t *testing.T) {
 	_, evidence, err := e.Read(context.Background(), 1, rtuReadRequest(t, FunctionReadHoldingRegisters))
 	if err == nil || !evidence.ReceiptWall.IsZero() || evidence.Current {
 		t.Fatalf("timeout=%v %#v", err, evidence)
+	}
+}
+
+func TestRTUTimingProductionReadHostAllowance(t *testing.T) {
+	for _, baud := range []uint32{300, 9600, 115200} {
+		timing := rtuTestTiming(t, baud)
+		want := 20 * time.Millisecond
+		if timing.InterCharacter() > want {
+			want = timing.InterCharacter()
+		}
+		if timing.readInterCharacter != want {
+			t.Fatalf("baud=%d: host allowance=%s want=%s", baud, timing.readInterCharacter, want)
+		}
+	}
+	config := RTUTimingConfig{Baud: 115200, DataBits: 8, Parity: RTUParityNone, StopBits: 1,
+		InterCharacterSafety: 30 * time.Millisecond, InterFrameSafety: 40 * time.Millisecond,
+		MaxResponseLatency: time.Second, MaxQuiescence: 2 * time.Second}
+	timing, err := NewRTUTiming(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if timing.readInterCharacter != config.InterCharacterSafety || timing.InterCharacter() != config.InterCharacterSafety || timing.InterFrame() != config.InterFrameSafety {
+		t.Fatal("explicit timing overrides lost")
 	}
 }

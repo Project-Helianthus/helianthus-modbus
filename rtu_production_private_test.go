@@ -122,7 +122,8 @@ func privateProductionTiming(t *testing.T) RTUTiming {
 
 func privateProductionConfig(t *testing.T, private RTUPrivateFunctionConfig) RTUProductionConfig {
 	t.Helper()
-	return RTUProductionConfig{Endpoint: "rtu-a", Serial: RTUSerialConfig{Path: "configured", Baud: 9600, DataBits: 8, Parity: RTUParityEven, StopBits: 1}, Timing: privateProductionTiming(t), ResponseTimeout: 20 * time.Millisecond, Enabled: true, Admission: productionAdmission(true), PrivateFunction: private}
+	timing := privateProductionTiming(t)
+	return RTUProductionConfig{Endpoint: "rtu-a", Serial: RTUSerialConfig{Path: "configured", Baud: 9600, DataBits: 8, Parity: RTUParityEven, StopBits: 1}, Timing: timing, ResponseTimeout: productionTestContextBudget(timing.MaxResponseLatency(), timing), Enabled: true, Admission: productionAdmission(true), PrivateFunction: private}
 }
 
 func privateProductionEndpoint(t *testing.T, stream RTUByteStream, admission RTUPrivateFunctionAdmission, maxResponses int) *RTUProductionEndpoint {
@@ -408,8 +409,8 @@ func TestRTUProductionPrivateFunctionIntermediateTimeoutRetainsEarlierFrames(t *
 	if len(evidence.ResponseADUs) != 1 || !bytes.Equal(evidence.ResponseADUs[0], echo) || evidence.ReceiptWall.IsZero() {
 		t.Fatalf("intermediate evidence = %#v", evidence)
 	}
-	// Two frame windows of at most one response timeout each, plus scheduling slack.
-	if elapsed := time.Since(started); elapsed > 2*time.Second {
+	// Two frame windows, plus the configured host/recovery allowance and margin.
+	if elapsed := time.Since(started); elapsed > productionTestContextBudget(2*e.timeout, e.timing) {
 		t.Fatalf("intermediate timeout unbounded: %s", elapsed)
 	}
 	assertPrivateFenced(t, e, stream, request)
@@ -570,20 +571,22 @@ func TestRTUProductionPrivateFunctionEvidenceRetiresWithGeneration(t *testing.T)
 		stream := &privateProductionStream{}
 		stream.queue(frame)
 		e := privateProductionEndpoint(t, stream, &privateProductionAdmission{admit: true}, 1)
-		if _, evidence, err := e.ExchangePrivateFunction(context.Background(), 1, request, DefaultPrivateFunctionResponsePolicy(), nil); err != nil || !evidence.Current {
+		ctx, cancel := context.WithTimeout(context.Background(), productionTestContextBudget(e.timeout, e.timing))
+		defer cancel()
+		if _, evidence, err := e.ExchangePrivateFunction(ctx, 1, request, DefaultPrivateFunctionResponsePolicy(), nil); err != nil || !evidence.Current {
 			t.Fatalf("exchange = %v %#v", err, evidence)
 		}
 		if last, ok := e.LastPrivateFunctionEvidence(); !ok || !last.Current || last.Generation != 1 {
 			t.Fatalf("fresh evidence = %#v", last)
 		}
 		// An FC03 timeout fences generation one.
-		if _, _, err := e.Read(context.Background(), 1, rtuReadRequest(t, FunctionReadHoldingRegisters)); !errors.Is(err, context.DeadlineExceeded) {
+		if _, _, err := e.Read(ctx, 1, rtuReadRequest(t, FunctionReadHoldingRegisters)); !errors.Is(err, context.DeadlineExceeded) {
 			t.Fatalf("read timeout = %v", err)
 		}
 		if last, ok := e.LastPrivateFunctionEvidence(); !ok || last.Current {
 			t.Fatalf("evidence current while fenced: %#v", last)
 		}
-		if err := e.Recover(context.Background()); err != nil {
+		if err := e.Recover(ctx); err != nil {
 			t.Fatal(err)
 		}
 		last, ok := e.LastPrivateFunctionEvidence()

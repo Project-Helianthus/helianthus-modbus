@@ -179,18 +179,28 @@ func (e *RTUProductionEndpoint) Read(ctx context.Context, unit byte, request Rea
 func (e *RTUProductionEndpoint) receive(ctx context.Context, unit byte, request ReadRegistersRequest) (ReadRegistersResponse, []byte, time.Duration, time.Time, error) {
 	deadline, cancel := context.WithTimeout(ctx, e.timeout)
 	defer cancel()
-	decoder, err := NewRTUFrameDecoder(e.timing)
+	// Receipt gaps on a buffered host transport are not wire-level t1.5
+	// measurements. Permit the configured host allowance only while assembling
+	// a typed, length-bounded response; CRC and the final t3.5 guard still apply.
+	decoderTiming := e.timing
+	decoderTiming.interCharacter = e.timing.readInterCharacter
+	decoder, err := NewRTUFrameDecoder(decoderTiming)
 	if err != nil {
 		return ReadRegistersResponse{}, nil, 0, time.Time{}, err
 	}
 	haveBytes := false
 	raw := []byte(nil)
 	receiptWall := time.Time{}
+	expectedLength := 0
 	for {
 		readCtx := deadline
 		cancelRead := func() {}
 		if haveBytes {
-			readCtx, cancelRead = context.WithTimeout(deadline, e.timing.InterFrame())
+			gap := e.timing.readInterCharacter
+			if expectedLength != 0 && len(raw) == expectedLength {
+				gap = e.timing.InterFrame()
+			}
+			readCtx, cancelRead = context.WithTimeout(deadline, gap)
 		}
 		v, offset, readErr := e.stream.ReadRTUByte(readCtx)
 		cancelRead()
@@ -198,6 +208,10 @@ func (e *RTUProductionEndpoint) receive(ctx context.Context, unit byte, request 
 			raw = append(raw, v)
 			if receiptWall.IsZero() {
 				receiptWall = time.Now()
+			}
+			expectedLength, err = rtuReadResponseLength(request, raw)
+			if err != nil {
+				return ReadRegistersResponse{}, raw, offset, receiptWall, err
 			}
 			if err := decoder.FeedByte(offset, v); err != nil {
 				return ReadRegistersResponse{}, raw, offset, receiptWall, err
@@ -214,6 +228,9 @@ func (e *RTUProductionEndpoint) receive(ctx context.Context, unit byte, request 
 		if !haveBytes {
 			continue
 		}
+		if expectedLength == 0 || len(raw) != expectedLength {
+			return ReadRegistersResponse{}, raw, offset, receiptWall, protocolError(ErrorMalformedResponse, request.Function(), 0, "rtu_read_response_length", len(raw))
+		}
 		frame, endErr := decoder.EndFrame(offset)
 		if endErr != nil {
 			return ReadRegistersResponse{}, raw, offset, receiptWall, endErr
@@ -225,6 +242,33 @@ func (e *RTUProductionEndpoint) receive(ctx context.Context, unit byte, request 
 		}
 		return decoded.Response(), raw, offset, receiptWall, nil
 	}
+}
+
+// rtuReadResponseLength uses the public FC03/FC04 response layout: address,
+// function, byte count, data, CRC; exceptions contain one exception-code byte.
+// Zero means the header is incomplete. It never admits a private function.
+func rtuReadResponseLength(request ReadRegistersRequest, raw []byte) (int, error) {
+	if len(raw) < 2 {
+		return 0, nil
+	}
+	length := 5
+	switch raw[1] {
+	case byte(request.Function()) | 0x80:
+	case byte(request.Function()):
+		if len(raw) < 3 {
+			return 0, nil
+		}
+		if int(raw[2]) != 2*int(request.Quantity()) {
+			return 0, protocolError(ErrorMalformedResponse, request.Function(), 0, "byte_count", 2)
+		}
+		length += int(raw[2])
+	default:
+		return 0, protocolError(ErrorMalformedResponse, request.Function(), 0, "function_code", 1)
+	}
+	if len(raw) > length {
+		return 0, protocolError(ErrorMalformedResponse, request.Function(), 0, "rtu_read_response_length", len(raw))
+	}
+	return length, nil
 }
 
 func (e *RTUProductionEndpoint) finish(ev RTUReadEvidence, response []byte, receiptWall time.Time, integrity bool, outcome string, fence bool) RTUReadEvidence {

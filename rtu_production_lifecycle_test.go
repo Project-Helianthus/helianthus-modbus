@@ -9,6 +9,16 @@ import (
 	"time"
 )
 
+// productionTestContextBudget leaves room for a response timeout, the typed
+// read's host transfer gap, quarantine/recovery, and host scheduling under race.
+// Use it for fixture response timeouts too: Recover creates its own context
+// from that timeout, so a generous caller context alone cannot avoid flakes.
+func productionTestContextBudget(responseTimeout time.Duration, timing RTUTiming) time.Duration {
+	const schedulingMargin = 100 * time.Millisecond
+	recoveryWindow := max(timing.MaxQuiescence(), responseTimeout+timing.InterFrame())
+	return responseTimeout + timing.readInterCharacter + recoveryWindow + schedulingMargin
+}
+
 func TestRTUProductionReadEvidenceRetiresWithLifecycle(t *testing.T) {
 	for _, function := range []FunctionCode{FunctionReadHoldingRegisters, FunctionReadInputRegisters} {
 		for _, transition := range []string{"close", "private fault and recover", "read timeout and recover"} {
@@ -17,7 +27,9 @@ func TestRTUProductionReadEvidenceRetiresWithLifecycle(t *testing.T) {
 				stream := &privateProductionStream{}
 				stream.queue(productionReadResponse(t, 1, request, []uint16{7, 8, 9}))
 				e := privateProductionEndpoint(t, stream, &privateProductionAdmission{admit: true}, 1)
-				_, success, err := e.Read(context.Background(), 1, request)
+				ctx, cancel := context.WithTimeout(context.Background(), productionTestContextBudget(e.timeout, e.timing))
+				defer cancel()
+				_, success, err := e.Read(ctx, 1, request)
 				if err != nil || !success.Current {
 					t.Fatalf("initial read = %v %#v", err, success)
 				}
@@ -38,18 +50,18 @@ func TestRTUProductionReadEvidenceRetiresWithLifecycle(t *testing.T) {
 					}
 				case "private fault and recover":
 					private := privateProductionRequest(t, privateProductionCode, privateProductionPayload)
-					if _, _, err := e.ExchangePrivateFunction(context.Background(), 1, private, DefaultPrivateFunctionResponsePolicy(), nil); !errors.Is(err, context.DeadlineExceeded) {
+					if _, _, err := e.ExchangePrivateFunction(ctx, 1, private, DefaultPrivateFunctionResponsePolicy(), nil); !errors.Is(err, context.DeadlineExceeded) {
 						t.Fatalf("private timeout = %v", err)
 					}
 				case "read timeout and recover":
-					_, retired, err = e.Read(context.Background(), 1, request)
+					_, retired, err = e.Read(ctx, 1, request)
 					if !errors.Is(err, context.DeadlineExceeded) || retired.Current || retired.TerminalOutcome != "transport_fault" {
 						t.Fatalf("read timeout = %v %#v", err, retired)
 					}
 				}
 				assertEvidence(retired)
 				if transition != "close" {
-					if err := e.Recover(context.Background()); err != nil {
+					if err := e.Recover(ctx); err != nil {
 						t.Fatal(err)
 					}
 					assertEvidence(retired)

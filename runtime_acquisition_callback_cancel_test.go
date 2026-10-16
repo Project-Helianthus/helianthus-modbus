@@ -110,22 +110,33 @@ func TestK17RetiredAttemptRejectsPausedCallbackWithSameKeySuccessor(t *testing.T
 		t.Fatal(err)
 	}
 	current := issueRuntimeAcquisitionForTest(t, source, successor, 0, views[2], "k17-successor")
-	currentInstance, err := successor.Close([]RuntimeAcquisition{current})
-	if err != nil {
-		t.Fatal(err)
+	assertSuccessorOpen := func() {
+		t.Helper()
+		source.mu.Lock()
+		defer source.mu.Unlock()
+		state := source.attempts[successor.token]
+		if state == nil || state.phase != runtimeAttemptOpen {
+			t.Fatal("successor must remain open while the stale callback resumes")
+		}
 	}
 	before := source.Snapshot()
 	if before.LiveCapabilities != 1 || before.ActiveAttempts != 1 {
 		t.Fatalf("successor state before callback: %#v", before)
 	}
+	assertSuccessorOpen()
 	releaseOnce.Do(func() { close(release) })
 	k17Wait(t, transport.done, "late callback completion/join")
+	assertSuccessorOpen()
 	late := <-transport.result
 	if late.acquisition.Valid() || !errors.Is(late.err, ErrRuntimeAttemptClosed) {
 		t.Fatalf("retired callback issued=%v err=%v", late.acquisition.Valid(), late.err)
 	}
 	if after := source.Snapshot(); !reflect.DeepEqual(after, before) {
 		t.Fatalf("late callback changed successor state: before=%#v after=%#v", before, after)
+	}
+	currentInstance, err := successor.Close([]RuntimeAcquisition{current})
+	if err != nil {
+		t.Fatal(err)
 	}
 	if original.AttemptKey() != current.AttemptKey() || instance.token == currentInstance.token {
 		t.Fatal("fixture must reuse the documentary key with distinct opaque instances")

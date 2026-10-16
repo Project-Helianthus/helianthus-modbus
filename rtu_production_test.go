@@ -269,7 +269,7 @@ func productionEndpoint(t *testing.T, stream RTUByteStream) *RTUProductionEndpoi
 	if err != nil {
 		t.Fatal(err)
 	}
-	e, err := newRTUProductionEndpoint(RTUProductionConfig{Endpoint: "rtu-a", Serial: RTUSerialConfig{Path: "configured", Baud: 9600, DataBits: 8, Parity: RTUParityEven, StopBits: 1}, Timing: timing, ResponseTimeout: 20 * time.Millisecond, Enabled: true, Admission: productionAdmission(true)}, stream)
+	e, err := newRTUProductionEndpoint(RTUProductionConfig{Endpoint: "rtu-a", Serial: RTUSerialConfig{Path: "configured", Baud: 9600, DataBits: 8, Parity: RTUParityEven, StopBits: 1}, Timing: timing, ResponseTimeout: productionTestContextBudget(timing.MaxResponseLatency(), timing), Enabled: true, Admission: productionAdmission(true)}, stream)
 	if err != nil {
 		t.Fatal(err)
 	}

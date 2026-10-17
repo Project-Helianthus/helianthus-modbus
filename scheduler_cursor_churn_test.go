@@ -2,6 +2,112 @@ package modbus
 
 import "testing"
 
+func TestS21SchedulerCursorRemovalOrder(t *testing.T) {
+	cases := []struct {
+		name   string
+		scopes []string
+		units  byte
+		prefix []uint64
+		cancel []uint64
+		readd  int
+		want   []uint64
+	}{
+		{
+			name: "unit_before_cursor", scopes: []string{"a"}, units: 3,
+			prefix: []uint64{11, 13}, cancel: []uint64{12}, readd: -1,
+			want: []uint64{15, 14, 16},
+		},
+		{
+			name: "unit_at_cursor", scopes: []string{"a"}, units: 3,
+			prefix: []uint64{11}, cancel: []uint64{13, 14}, readd: -1,
+			want: []uint64{15, 12, 16},
+		},
+		{
+			name: "unit_after_cursor", scopes: []string{"a"}, units: 3,
+			prefix: []uint64{11}, cancel: []uint64{15, 16}, readd: -1,
+			want: []uint64{13, 12, 14},
+		},
+		{
+			name: "last_scope_at_cursor_readded", scopes: []string{"a", "b", "c"}, units: 1,
+			prefix: []uint64{11, 13}, cancel: []uint64{15, 16}, readd: 2,
+			want: []uint64{12, 14, 27, 28},
+		},
+		{
+			name: "last_unit_at_cursor_readded", scopes: []string{"a"}, units: 2,
+			prefix: []uint64{11}, cancel: []uint64{13, 14}, readd: 1,
+			want: []uint64{12, 27, 28},
+		},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			scheduler, err := newEndpointScheduler(SchedulerLimits{
+				MaxActiveAdmissionKeys: 3, ProtectedSlotsPerKey: 1,
+				SharedBurstSlots: 5, TotalQueued: 8,
+				MaxQueuedPerKey: 2, MaxQueuedPerAuthorizationScope: 8,
+				MaxCoalescedDependentsPerKey: 1, MaxRetryAttempts: 1,
+				MaxInFlightRequests: 1,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			requests := make(map[uint64]ScheduledRequest)
+			var keys []AdmissionKey
+			enqueue := func(id uint64, key AdmissionKey) {
+				request := ScheduledRequest{RequestID: id, Key: key, DeadlineOffset: 1000 + int64(id)}
+				if err := scheduler.Enqueue(request); err != nil {
+					t.Fatalf("enqueue %d: %v", id, err)
+				}
+				requests[id] = request
+			}
+			for _, scope := range test.scopes {
+				for unit := byte(1); unit <= test.units; unit++ {
+					key := AdmissionKey{AuthorizationScope: scope, UnitID: unit}
+					id := uint64(11 + 2*len(keys))
+					keys = append(keys, key)
+					enqueue(id, key)
+					enqueue(id+1, key)
+				}
+			}
+			dispatch := func(id uint64) {
+				request, ok := scheduler.Dispatch(10)
+				if !ok {
+					t.Fatalf("dispatch want %d returned empty", id)
+				}
+				if want := requests[id]; request != want {
+					t.Fatalf("dispatch = %+v, want %+v", request, want)
+				}
+				if err := scheduler.Complete(request.RequestID); err != nil {
+					t.Fatalf("complete %d: %v", request.RequestID, err)
+				}
+			}
+			for _, id := range test.prefix {
+				dispatch(id)
+			}
+			for _, id := range test.cancel {
+				if !scheduler.CancelQueued(id) {
+					t.Fatalf("cancel %d failed", id)
+				}
+			}
+			if test.readd >= 0 {
+				enqueue(27, keys[test.readd])
+				enqueue(28, keys[test.readd])
+			}
+			for _, id := range test.want {
+				dispatch(id)
+			}
+			if request, ok := scheduler.Dispatch(10); ok {
+				t.Errorf("extra dispatch: %+v", request)
+			}
+			if size := scheduler.OrderMetadataSize(); size != 0 {
+				t.Errorf("drained metadata = %d, want 0", size)
+			}
+			if got := scheduler.resourceSnapshot(); got != (endpointSchedulerResourceSnapshot{}) {
+				t.Errorf("drained resources = %+v, want zero", got)
+			}
+		})
+	}
+}
+
 func TestS21SchedulerCursorChurn(t *testing.T) {
 	// IDs identify FIFO positions: 11/12 = first scope/unit, 21/22 =
 	// first scope/second unit, then 31/32 through 61/62 for its peers.

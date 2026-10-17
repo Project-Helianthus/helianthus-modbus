@@ -31,7 +31,7 @@ func TestU18NormalizationBufferOwnership(t *testing.T) {
 		NormalizedZeroBasedPDUOffset: 70,
 		WordCount:                    1,
 	}
-	for _, callerBuffer := range []string{"parse_input", "bytes_result", "append_json_result"} {
+	for _, callerBuffer := range []string{"parse_input", "bytes_result", "append_json_result", "append_json_nil_destination"} {
 		t.Run(callerBuffer, func(t *testing.T) {
 			// The oracle is detached before parsing or mutating any caller buffer.
 			wantEncoding := []byte(original)
@@ -54,6 +54,16 @@ func TestU18NormalizationBufferOwnership(t *testing.T) {
 				}
 			case "append_json_result":
 				mutable = appendU18NormalizationWithPrefix(t, record, wantEncoding)
+			case "append_json_nil_destination":
+				// The common call shape: an empty destination must still get a copy.
+				appended, err := record.AppendJSON(nil)
+				if err != nil {
+					t.Fatalf("AppendJSON(nil): %v", err)
+				}
+				if !bytes.Equal(appended, wantEncoding) {
+					t.Fatalf("AppendJSON(nil) = %q, want %q", appended, wantEncoding)
+				}
+				mutable = appended
 			}
 			// Overwrite once; independent cases cannot restore an alias accidentally.
 			for i := range mutable {

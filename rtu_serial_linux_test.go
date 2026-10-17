@@ -132,7 +132,11 @@ func TestRTUSerialLinuxPTYChunkedReadFrames(t *testing.T) {
 			t.Run(fmt.Sprintf("FC%02d/%s", function, mutation), func(t *testing.T) {
 				peer, path := linuxTestPTY(t)
 				s := linuxTestSerial(t, path)
-				e := chunkedReadEndpoint(t, s, 0)
+				// This test covers framing across chunked PTY reads, not the
+				// inter-character gap (pinned deterministically by the configured-gap
+				// regression). A wide gap keeps runner scheduling latency between the
+				// sender's chunks from closing a frame early.
+				e := chunkedReadEndpoint(t, s, 250*time.Millisecond)
 				req, err := NewReadRegistersRequest(function, 0, 125)
 				if err != nil {
 					t.Fatal(err)

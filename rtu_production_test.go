@@ -149,23 +149,86 @@ func TestRTUProductionLengthFramingRejectsCorruptionAndTruncation(t *testing.T) 
 	}
 }
 
+// configuredGapStream scripts receipt offsets, not OS timeout delivery.
+// A synthetic timeout supplies the final idle guard without waiting.
+type configuredGapStream struct {
+	frame   []byte
+	offsets []time.Duration
+	index   int
+	offset  time.Duration
+}
+
+func (s *configuredGapStream) WriteRTU(_ context.Context, frame []byte) (int, error) {
+	return len(frame), nil
+}
+
+func (s *configuredGapStream) RTUOffset() time.Duration { return s.offset }
+
+func (s *configuredGapStream) ReadRTUByte(_ context.Context) (byte, time.Duration, error) {
+	if s.index == len(s.frame) {
+		s.offset += 40 * time.Millisecond
+		return 0, s.offset, context.DeadlineExceeded
+	}
+	value := s.frame[s.index]
+	s.offset = s.offsets[s.index]
+	s.index++
+	return value, s.offset, nil
+}
+
 func TestRTUProductionLengthFramingHonorsConfiguredGap(t *testing.T) {
 	req := rtuReadRequest(t, FunctionReadHoldingRegisters)
-	frame := productionReadResponse(t, 1, req, []uint16{1, 2, 3})
+	words := []uint16{1, 2, 3}
+	frame := productionReadResponse(t, 1, req, words)
 	for _, tc := range []struct {
+		name        string
 		gap, safety time.Duration
 		accepted    bool
 	}{
-		{4 * time.Millisecond, 10 * time.Millisecond, true},
-		{15 * time.Millisecond, 3 * time.Millisecond, false},
-		{50 * time.Millisecond, 0, false},
+		{"configured below", 30*time.Millisecond - time.Nanosecond, 30 * time.Millisecond, true},
+		{"configured equal", 30 * time.Millisecond, 30 * time.Millisecond, true},
+		{"configured above", 30*time.Millisecond + time.Nanosecond, 30 * time.Millisecond, false},
+		{"default below", 20*time.Millisecond - time.Nanosecond, 0, true},
+		{"default equal", 20 * time.Millisecond, 0, true},
+		{"default above", 20*time.Millisecond + time.Nanosecond, 0, false},
+		{"default host gap", 4 * time.Millisecond, 0, true},
 	} {
-		s := &chunkedReadStream{frame: frame, chunk: 3, gap: tc.gap}
-		e := chunkedReadEndpoint(t, s, tc.safety)
-		_, _, err := e.Read(context.Background(), 1, req)
-		if (err == nil) != tc.accepted {
-			t.Fatalf("gap=%s safety=%s: %v", tc.gap, tc.safety, err)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			offsets := make([]time.Duration, len(frame))
+			for i := range offsets {
+				offsets[i] = time.Duration(i+1) * 100 * time.Microsecond
+				if i >= 3 {
+					// Split once after the unit/function/byte-count header.
+					offsets[i] += tc.gap - 100*time.Microsecond
+				}
+			}
+			s := &configuredGapStream{frame: frame, offsets: offsets}
+			e := chunkedReadEndpoint(t, s, tc.safety)
+			response, ev, err := e.Read(context.Background(), 1, req)
+			if tc.accepted {
+				if err != nil || !ev.Current || !ev.IntegrityValid || e.fenced || ev.TerminalOutcome != "success" {
+					t.Fatalf("gap=%s safety=%s: err=%v evidence=%#v fenced=%v", tc.gap, tc.safety, err, ev, e.fenced)
+				}
+				if len(response.Words) != len(words) || len(ev.Words) != len(words) {
+					t.Fatalf("words: response=%v evidence=%v", response.Words, ev.Words)
+				}
+				for i, want := range words {
+					if response.Words[i] != want || ev.Words[i] != want {
+						t.Fatalf("word %d: response=%v evidence=%v want=%v", i, response.Words, ev.Words, words)
+					}
+				}
+				if !bytes.Equal(ev.ResponseADU, frame) || s.index != len(frame) || s.RTUOffset()-offsets[len(frame)-1] <= e.timing.InterFrame() {
+					t.Fatalf("incomplete frame evidence or final idle guard: %#v", ev)
+				}
+			} else {
+				var pe *ProtocolError
+				if !errors.As(err, &pe) || pe.Field != "rtu_inter_character_gap" || ev.Current || ev.IntegrityValid || !e.fenced || ev.TerminalOutcome != "transport_fault" {
+					t.Fatalf("excessive gap: err=%v evidence=%#v fenced=%v", err, ev, e.fenced)
+				}
+				if len(response.Words) != 0 || len(ev.Words) != 0 || s.index != 4 || !bytes.Equal(ev.ResponseADU, frame[:4]) {
+					t.Fatalf("excessive gap did not retain only the rejected prefix: response=%#v evidence=%#v", response, ev)
+				}
+			}
+		})
 	}
 }
 

@@ -48,6 +48,7 @@ func TestQ24TypedReadLengthMatrix(t *testing.T) {
 					{"inconsistent_byte_count", payload, byte(len(payload) - 1), function, "byte_count"},
 					{"self_consistent_short_even", payload[:len(payload)-2], byte(len(payload) - 2), function, "byte_count"},
 					{"self_consistent_short_odd", payload[:len(payload)-1], byte(len(payload) - 1), function, "byte_count"},
+					{"self_consistent_long_odd", append(append([]byte(nil), payload...), 0x55), byte(len(payload) + 1), function, "byte_count"},
 					{"wrong_function", payload, byte(len(payload)), other, "function_mismatch"},
 				}
 				// Two extra bytes at the maximum would exceed RTU framing bounds.

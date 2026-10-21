@@ -4,6 +4,9 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 export GOWORK=off
+if [[ "$(uname -s)" == "Linux" ]]; then
+  export HELIANTHUS_REQUIRE_PTY=1
+fi
 
 echo "==> terminology gate"
 legacy_pattern='m[a]ster|s[l]ave'

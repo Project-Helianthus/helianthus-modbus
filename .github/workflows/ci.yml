@@ -49,6 +49,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           HELIANTHUS_EXTERNAL_LINT_JOB: "1"
+          HELIANTHUS_REQUIRE_PTY: "1"
 
   lint:
     # fork pull requests never run on the persistent runners
@@ -65,5 +66,7 @@ jobs:
           go-version: "1.22"
           cache: false
       - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        env:
+          HELIANTHUS_REQUIRE_PTY: "1"
         with:
           version: v2.11.4

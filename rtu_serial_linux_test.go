@@ -20,7 +20,7 @@ func linuxTestPTY(t *testing.T) (*os.File, string) {
 	reason, err := rtuPTYPreflight(func(path string) error {
 		_, err := os.Stat(path)
 		return err
-	})
+	}, os.Getenv("HELIANTHUS_REQUIRE_PTY"))
 	if err != nil {
 		t.Fatal(err)
 	}

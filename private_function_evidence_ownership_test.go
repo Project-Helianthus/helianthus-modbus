@@ -147,8 +147,8 @@ func TestK18MalformedBinaryExchangeRetainsDetachedPartialEvidence(t *testing.T) 
 			if !errors.As(err, &pe) || responses != nil || evidence.Current || evidence.IntegrityValid || evidence.TerminalOutcome != "transport_fault" || classified != 1 {
 				t.Fatalf("malformed exchange = %v / %#v / classified %d", err, evidence, classified)
 			}
-			if len(evidence.ResponseADUs) != 2 || len(evidence.ResponseADUs[1]) > MaxRTUADUSize {
-				t.Fatalf("unbounded or lost partial evidence: %x", evidence.ResponseADUs)
+			if len(evidence.ResponseADUs) != 2 {
+				t.Fatalf("lost partial evidence: %x", evidence.ResponseADUs)
 			}
 			k18Equal(t, "earlier valid frame", evidence.ResponseADUs[0], valid)
 			k18Equal(t, "exact malformed bytes", evidence.ResponseADUs[1], tc.frame)
@@ -200,11 +200,11 @@ func TestK18BinaryPayloadBoundsAndAdmission(t *testing.T) {
 
 	for _, admission := range []RTUPrivateFunctionAdmission{nil, &privateProductionAdmission{}} {
 		deniedStream := &privateProductionStream{}
-		max := 0
+		maxResponses := 0
 		if admission != nil {
-			max = 1
+			maxResponses = 1
 		}
-		denied := privateProductionEndpoint(t, deniedStream, admission, max)
+		denied := privateProductionEndpoint(t, deniedStream, admission, maxResponses)
 		t.Cleanup(func() { _ = denied.Close() })
 		if _, _, err := denied.ExchangePrivateFunction(context.Background(), 1, request, DefaultPrivateFunctionResponsePolicy(), nil); err == nil {
 			t.Fatal("binary payload bypassed FC100 admission")

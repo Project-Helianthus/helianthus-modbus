@@ -707,6 +707,7 @@ func (endpoint *TCPEndpoint) Retry(
 	reads := append([]TCPLogicalRead(nil), handle.backoff.reads...)
 	deviceID := handle.backoff.deviceID
 	deviceIDLimits := handle.backoff.deviceIDLimits
+	deviceIDDecoding := handle.backoff.deviceIDDecoding
 	deviceIDRetry := deviceID.access != 0
 	handle.backoff.mu.Unlock()
 	endpoint.trackRetryableState(handle, tcpRequestRetrying)
@@ -841,6 +842,7 @@ func (endpoint *TCPEndpoint) Retry(
 		deviceID:            deviceID,
 		deviceIDInitial:     deviceID,
 		deviceIDLimits:      deviceIDLimits,
+		deviceIDDecoding:    deviceIDDecoding,
 		operationDeadline:   effectiveDeadline,
 		phase:               endpointRequestQueued,
 	}

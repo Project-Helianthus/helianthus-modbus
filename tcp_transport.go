@@ -17,6 +17,9 @@ const (
 	defaultTCPRequestDeadline  = 30 * time.Second
 	defaultTCPResponseDeadline = 30 * time.Second
 	tcpClockContractVersion    = "helianthus-tcp-monotonic-v1"
+	// tcpOversizePDUDetail marks a response_receive event whose PDU exceeded
+	// MaxPDUSize under tolerant framing.
+	tcpOversizePDUDetail = "oversize_pdu"
 )
 
 // TCPTransportTimer is an injected one-shot monotonic timer. Stop returns true
@@ -116,6 +119,9 @@ type TCPEndpointMetrics struct {
 	SourceObservationGaps    uint64
 	EventSinkPanics          uint64
 	Responses                TCPResponseClassMetrics
+	// OversizePDUResponses counts received frames whose PDU exceeded
+	// MaxPDUSize; only tolerant framing delivers them.
+	OversizePDUResponses uint64
 }
 
 // TCPTransportEventSink receives events synchronously in sequence order. A
@@ -322,6 +328,9 @@ func (timeline *tcpEndpointTimeline) observeMetricsLocked(
 	case TCPEventCallerCancellation:
 		saturatingIncrement(&timeline.metrics.Cancellations)
 	case TCPEventResponseReceive:
+		if event.Detail == tcpOversizePDUDetail {
+			saturatingIncrement(&timeline.metrics.OversizePDUResponses)
+		}
 		switch event.WireOutcome {
 		case WireSuccessfulData:
 			saturatingIncrement(&timeline.metrics.Responses.SuccessfulData)
@@ -414,6 +423,7 @@ func (timeline *tcpEndpointTimeline) Exhausted() bool {
 // TCPTransportConfig declares finite per-operation transport bounds.
 type TCPTransportConfig struct {
 	MaxBufferedBytes int
+	Framing          TCPFraming
 	RequestDeadline  time.Duration
 	ResponseDeadline time.Duration
 	Clock            TCPMonotonicClock
@@ -486,6 +496,7 @@ type TCPTransport struct {
 	socketIdentity   tcpConnectionIdentity
 	owner            *TCPConnectionOwner
 	decoder          *TCPStreamDecoder
+	readBufferSize   int
 	writeGate        chan struct{}
 	readGate         chan struct{}
 	readDeadlineMu   sync.Mutex
@@ -755,7 +766,10 @@ func newTCPTransportWithConfig(
 			-1,
 		)
 	}
-	decoder, err := NewTCPStreamDecoder(config.MaxBufferedBytes)
+	decoder, err := NewTCPStreamDecoderWithFraming(
+		config.MaxBufferedBytes,
+		config.Framing,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -768,6 +782,7 @@ func newTCPTransportWithConfig(
 		socketIdentity:   socketIdentity,
 		owner:            owner,
 		decoder:          decoder,
+		readBufferSize:   tcpFramingADUBound(config.Framing),
 		writeGate:        writeGate,
 		readGate:         readGate,
 		requestDeadline:  config.RequestDeadline,
@@ -1862,7 +1877,7 @@ func (transport *TCPTransport) readResponsesUntil(
 		transport.finishActiveRead(activeRead)
 		return nil, OwnerTransition{}, nil, err
 	}
-	buffer := make([]byte, maxTCPADUSize)
+	buffer := make([]byte, transport.readBufferSize)
 	count, readErr := transport.conn.Read(buffer)
 	readReturnOffset := transport.clock.Now()
 	operation.markReturn()

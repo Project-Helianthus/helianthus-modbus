@@ -56,6 +56,7 @@ func (endpoint *TCPEndpoint) Write(
 		reservation, err = owner.reserveDeviceIDUntil(
 			request.unitID,
 			request.deviceID,
+			request.deviceIDDecoding,
 			request.operationDeadline,
 		)
 	} else {
@@ -352,6 +353,9 @@ func (endpoint *TCPEndpoint) acceptDeviceIDResponse(
 	if current != request {
 		return nil, false, context.Canceled
 	}
+	if request.deviceIDDecoding == DeviceIDDecodingTolerant {
+		return endpoint.acceptTolerantDeviceIDResponse(request, response)
+	}
 	segment, ok := response.DeviceIDSegment()
 	if !ok {
 		return nil, false, protocolError(
@@ -422,6 +426,60 @@ func (endpoint *TCPEndpoint) acceptDeviceIDResponse(
 	return &TCPDeviceIDCompletion{
 		RequestID: request.handle.requestID,
 		Result:    result,
+	}, false, nil
+}
+
+// acceptTolerantDeviceIDResponse folds one tolerant page into the request's
+// traversal. It requeues the continuation while the traversal expects one
+// and otherwise publishes the traversal, complete or stopped at a bound.
+func (endpoint *TCPEndpoint) acceptTolerantDeviceIDResponse(
+	request *endpointRequest,
+	response WireResponse,
+) (*TCPDeviceIDCompletion, bool, error) {
+	page, ok := response.DeviceIDPage()
+	if !ok {
+		return nil, false, protocolError(
+			ErrorInvalidRequest,
+			FunctionEncapsulatedInterface,
+			0,
+			"device_id_page",
+			-1,
+		)
+	}
+	if request.deviceIDTraversal == nil {
+		traversal, err := newDeviceIDTolerantTraversal(
+			request.deviceIDInitial,
+			request.deviceIDLimits,
+		)
+		if err != nil {
+			return nil, false, err
+		}
+		request.deviceIDTraversal = traversal
+	}
+	traversal := request.deviceIDTraversal
+	if err := traversal.add(page); err != nil {
+		return nil, false, err
+	}
+	if !traversal.closed {
+		if err := endpoint.requeueDeviceIDContinuation(
+			request,
+			traversal.expected,
+		); err != nil {
+			return nil, false, err
+		}
+		return nil, true, nil
+	}
+	result, err := traversal.finish()
+	if err != nil {
+		return nil, false, err
+	}
+	if err := endpoint.failRequest(request); err != nil {
+		return nil, false, err
+	}
+	return &TCPDeviceIDCompletion{
+		RequestID: request.handle.requestID,
+		Decoding:  DeviceIDDecodingTolerant,
+		Tolerant:  result,
 	}, false, nil
 }
 

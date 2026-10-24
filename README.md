@@ -84,6 +84,26 @@ separate code-03 primitive for documented arbitrary-start object streams; it
 permits one `0xff` to `0x00` cursor wrap, rejects loops and duplicate objects,
 and publishes no partial aggregate.
 
+Strict MBAP framing and strict Device Identification decoding remain the
+defaults. Devices that deviate from the specification, such as logger-class
+gateways, can opt in per endpoint and per plan. With
+`TCPEndpointConfig.Framing` set to `TCPFramingTolerant`, each frame is read by
+its MBAP length while the PDU is at most `MaxTolerantPDUSize` (4096) bytes; a
+PDU above the 253-byte maximum is delivered and reported through
+`OversizePDU` on the ADU and wire response, the `oversize_pdu` detail on the
+`response_receive` event, and the `OversizePDUResponses` metric. A longer
+length, a non-zero protocol identifier, or a truncated frame fails with
+`*TCPFrameError`, which keeps every undelivered byte, and the connection is
+renewed through the normal reconnect path. Register reads stay strictly
+decoded under either framing. With `TCPDeviceIDPlan.Decoding` set to
+`DeviceIDDecodingTolerant`, each page is decoded by `DecodeDeviceIDPage`,
+which keeps every byte, decodes what parses, and names each deviation as a
+stable `DeviceIDAnomaly`. The traversal follows any non-zero more-follows value
+while the cursor advances, within `DeviceIDLimits`, and publishes
+`TCPDeviceIDCompletion.Tolerant`; a traversal stopped at a bound is published
+with `Complete` false and a named traversal anomaly. Exceptions and
+unreadable pages stay terminal.
+
 `NewRuntimeAcquisitionSource` provides the optional bounded trust root for
 successful TCP logical views. A configured endpoint marks only correlated,
 coherent, still-attached `successful_data` views as eligible. The source binds

@@ -827,3 +827,541 @@ func objectAllowedByConformity(
 		return false
 	}
 }
+
+// DeviceIDDecoding selects how an FC2B/MEI0E traversal decodes its pages.
+type DeviceIDDecoding byte
+
+const (
+	// DeviceIDDecodingStrict validates every page against the Modbus
+	// specification and publishes only a complete validated aggregate. It is
+	// the zero value and the default for every existing caller.
+	DeviceIDDecodingStrict DeviceIDDecoding = iota
+	// DeviceIDDecodingTolerant keeps every page byte, decodes what parses,
+	// reports deviations as named anomalies, and pages until more-follows is
+	// zero within the traversal limits.
+	DeviceIDDecodingTolerant
+)
+
+func validDeviceIDDecoding(decoding DeviceIDDecoding) bool {
+	return decoding == DeviceIDDecodingStrict ||
+		decoding == DeviceIDDecodingTolerant
+}
+
+// DeviceIDAnomaly names one deviation observed by tolerant decoding. The
+// names are stable; consumers key on them.
+type DeviceIDAnomaly string
+
+// Page anomalies describe one response PDU.
+const (
+	// DeviceIDAnomalyOversizePage marks a PDU longer than MaxPDUSize.
+	DeviceIDAnomalyOversizePage DeviceIDAnomaly = "oversize_page"
+	// DeviceIDAnomalyCountOnlyPage marks a page whose only object has a
+	// one-byte value while its header announces more objects than the page
+	// carries: the page carries a count, not the objects it announces.
+	DeviceIDAnomalyCountOnlyPage DeviceIDAnomaly = "count_only_page"
+	// DeviceIDAnomalyObjectCountMismatch marks a number-of-objects field that
+	// differs from the objects present in the page.
+	DeviceIDAnomalyObjectCountMismatch DeviceIDAnomaly = "object_count_mismatch"
+	// DeviceIDAnomalyObjectOutsideCategory marks an object outside the
+	// requested access category, for example non-basic objects in a basic
+	// reply, or a different object in an individual reply.
+	DeviceIDAnomalyObjectOutsideCategory DeviceIDAnomaly = "object_outside_requested_category"
+	// DeviceIDAnomalyObjectOutsideConformity marks an object outside the
+	// category that the page's own conformity level declares.
+	DeviceIDAnomalyObjectOutsideConformity DeviceIDAnomaly = "object_outside_conformity"
+	// DeviceIDAnomalyReservedObjectID marks an object id in 0x07 to 0x7f.
+	DeviceIDAnomalyReservedObjectID DeviceIDAnomaly = "reserved_object_id"
+	// DeviceIDAnomalyOversizeObjectValue marks an object value longer than a
+	// conforming PDU can carry.
+	DeviceIDAnomalyOversizeObjectValue DeviceIDAnomaly = "oversize_object_value"
+	// DeviceIDAnomalyObjectOrder marks object ids that do not ascend within
+	// the page, apart from one 0xff to 0x00 wrap on an extended stream.
+	DeviceIDAnomalyObjectOrder DeviceIDAnomaly = "object_order"
+	// DeviceIDAnomalyDuplicateObject marks an object id seen earlier in the
+	// page or traversal. The first occurrence is aggregated.
+	DeviceIDAnomalyDuplicateObject DeviceIDAnomaly = "duplicate_object"
+	// DeviceIDAnomalyTruncatedObject marks an object header or value that
+	// runs past the end of the PDU. The bytes from UndecodedOffset onward
+	// stay in the page undecoded.
+	DeviceIDAnomalyTruncatedObject DeviceIDAnomaly = "truncated_object"
+	// DeviceIDAnomalyAccessCodeMismatch marks a reply whose read device id
+	// code differs from the request.
+	DeviceIDAnomalyAccessCodeMismatch DeviceIDAnomaly = "access_code_mismatch"
+	// DeviceIDAnomalyConformityValue marks an unknown conformity level byte.
+	DeviceIDAnomalyConformityValue DeviceIDAnomaly = "conformity_value"
+	// DeviceIDAnomalyMoreFollowsValue marks a more-follows byte that is
+	// neither 0x00 nor 0xff. Any non-zero value continues the stream.
+	DeviceIDAnomalyMoreFollowsValue DeviceIDAnomaly = "more_follows_value"
+	// DeviceIDAnomalyNextObjectWithoutMoreFollows marks a non-zero next
+	// object id on a page whose more-follows byte is zero.
+	DeviceIDAnomalyNextObjectWithoutMoreFollows DeviceIDAnomaly = "next_object_without_more_follows"
+	// DeviceIDAnomalyMoreFollowsWithoutProgress marks a page that sets
+	// more-follows but carries no object or a next object id that does not
+	// advance past its last object.
+	DeviceIDAnomalyMoreFollowsWithoutProgress DeviceIDAnomaly = "more_follows_without_progress"
+)
+
+// Traversal anomalies describe the page sequence.
+const (
+	// DeviceIDAnomalyConformityChange marks a conformity level that differs
+	// from the first page.
+	DeviceIDAnomalyConformityChange DeviceIDAnomaly = "conformity_change"
+	// DeviceIDAnomalyMandatoryObjectMissing marks a standard stream without
+	// all of the basic objects 0x00 to 0x02.
+	DeviceIDAnomalyMandatoryObjectMissing DeviceIDAnomaly = "mandatory_object_missing"
+	// DeviceIDAnomalyContinuationUnavailable marks a page that sets
+	// more-follows although no bounded continuation exists: individual
+	// access, a cursor that does not advance, or a second extended wrap.
+	DeviceIDAnomalyContinuationUnavailable DeviceIDAnomaly = "continuation_unavailable"
+	// DeviceIDAnomalyPageLimitReached marks a traversal stopped at the page
+	// limit while more-follows was still set.
+	DeviceIDAnomalyPageLimitReached DeviceIDAnomaly = "page_limit_reached"
+	// DeviceIDAnomalyAggregateLimitReached marks a traversal stopped at the
+	// object-count or value-byte limit.
+	DeviceIDAnomalyAggregateLimitReached DeviceIDAnomaly = "aggregate_limit_reached"
+)
+
+// DeviceIDPage is one tolerantly decoded FC2B/MEI0E response page. PDU holds
+// every received byte; the other fields are views decoded from it. Paging and
+// aggregation decode PDU again, so only the received bytes decide them.
+type DeviceIDPage struct {
+	Request          DeviceIDRequest
+	PDU              []byte
+	AccessCode       DeviceIDAccess
+	Conformity       DeviceIDConformity
+	MoreFollowsValue byte
+	NextObjectID     byte
+	DeclaredObjects  int
+	Objects          []DeviceIDObject
+	UndecodedOffset  int
+	Anomalies        []DeviceIDAnomaly
+}
+
+// MoreFollows reports a non-zero more-follows byte.
+func (page DeviceIDPage) MoreFollows() bool {
+	return page.MoreFollowsValue != 0
+}
+
+// OversizePDU reports a PDU longer than MaxPDUSize.
+func (page DeviceIDPage) OversizePDU() bool {
+	return len(page.PDU) > MaxPDUSize
+}
+
+// HasAnomaly reports whether the page carries the named anomaly.
+func (page DeviceIDPage) HasAnomaly(anomaly DeviceIDAnomaly) bool {
+	return containsDeviceIDAnomaly(page.Anomalies, anomaly)
+}
+
+// DeviceIDTolerantResult is the outcome of one tolerant traversal. Complete
+// is true only when the last page carried more-follows zero. Objects holds
+// the first occurrence of each object id in page order; Pages keeps every
+// page with all of its bytes; Anomalies lists each page and traversal
+// anomaly once, in first-seen order.
+type DeviceIDTolerantResult struct {
+	Complete   bool
+	Conformity DeviceIDConformity
+	Objects    []DeviceIDObject
+	Pages      []DeviceIDPage
+	Anomalies  []DeviceIDAnomaly
+}
+
+// HasAnomaly reports whether the traversal carries the named anomaly.
+func (result DeviceIDTolerantResult) HasAnomaly(anomaly DeviceIDAnomaly) bool {
+	return containsDeviceIDAnomaly(result.Anomalies, anomaly)
+}
+
+// DecodeDeviceIDPage tolerantly decodes one FC2B/MEI0E response PDU of at
+// most MaxTolerantPDUSize bytes. Deviations from the specification become
+// named anomalies on the returned page. An exception reply, a different
+// function, a different MEI type, or a PDU too short for the seven header
+// bytes returns an error together with a page that still holds every byte.
+func DecodeDeviceIDPage(
+	request DeviceIDRequest,
+	pdu []byte,
+) (DeviceIDPage, error) {
+	if err := validateDeviceIDRequest(request); err != nil {
+		return DeviceIDPage{}, err
+	}
+	page := DeviceIDPage{
+		Request: request,
+		PDU:     cloneBytes(pdu),
+	}
+	if len(pdu) == 0 {
+		return page, malformedDeviceID(request, 0, "function", 0)
+	}
+	received := FunctionCode(pdu[0])
+	if received == FunctionEncapsulatedInterface|0x80 {
+		if len(pdu) != 2 {
+			return page, malformedDeviceID(
+				request,
+				received,
+				"exception_length",
+				len(pdu),
+			)
+		}
+		err := protocolError(
+			ErrorExceptionResponse,
+			FunctionEncapsulatedInterface,
+			received,
+			"exception_code",
+			1,
+		)
+		err.ExceptionCode = pdu[1]
+		return page, err
+	}
+	if received != FunctionEncapsulatedInterface {
+		return page, malformedDeviceID(
+			request,
+			received,
+			"function_mismatch",
+			0,
+		)
+	}
+	if len(pdu) < 7 || len(pdu) > MaxTolerantPDUSize {
+		return page, malformedDeviceID(
+			request,
+			received,
+			"response_length",
+			len(pdu),
+		)
+	}
+	if pdu[1] != deviceIDMEIType {
+		return page, malformedDeviceID(request, received, "mei_type", 1)
+	}
+	page.AccessCode = DeviceIDAccess(pdu[2])
+	page.Conformity = DeviceIDConformity(pdu[3])
+	page.MoreFollowsValue = pdu[4]
+	page.NextObjectID = pdu[5]
+	page.DeclaredObjects = int(pdu[6])
+	var anomalies deviceIDAnomalySet
+	if len(pdu) > MaxPDUSize {
+		anomalies.add(DeviceIDAnomalyOversizePage)
+	}
+	if page.AccessCode != request.access {
+		anomalies.add(DeviceIDAnomalyAccessCodeMismatch)
+	}
+	conformityKnown := validDeviceIDConformity(page.Conformity)
+	if !conformityKnown {
+		anomalies.add(DeviceIDAnomalyConformityValue)
+	}
+	if page.MoreFollowsValue != 0x00 && page.MoreFollowsValue != 0xff {
+		anomalies.add(DeviceIDAnomalyMoreFollowsValue)
+	}
+	if !page.MoreFollows() && page.NextObjectID != 0 {
+		anomalies.add(DeviceIDAnomalyNextObjectWithoutMoreFollows)
+	}
+	cursor := 7
+	seen := make(map[byte]struct{})
+	for cursor < len(pdu) {
+		if cursor+2 > len(pdu) {
+			anomalies.add(DeviceIDAnomalyTruncatedObject)
+			break
+		}
+		objectID := pdu[cursor]
+		valueLength := int(pdu[cursor+1])
+		if cursor+2+valueLength > len(pdu) {
+			anomalies.add(DeviceIDAnomalyTruncatedObject)
+			break
+		}
+		if valueLength > maxDeviceIDObjectValueBytes {
+			anomalies.add(DeviceIDAnomalyOversizeObjectValue)
+		}
+		if _, duplicate := seen[objectID]; duplicate {
+			anomalies.add(DeviceIDAnomalyDuplicateObject)
+		}
+		seen[objectID] = struct{}{}
+		if count := len(page.Objects); count > 0 {
+			previous := page.Objects[count-1].ID
+			if !deviceIDPageCursorAdvances(previous, objectID, request.extended) {
+				anomalies.add(DeviceIDAnomalyObjectOrder)
+			}
+		}
+		if objectID >= 0x07 && objectID < 0x80 {
+			anomalies.add(DeviceIDAnomalyReservedObjectID)
+		}
+		if (request.access == DeviceIDIndividual &&
+			objectID != request.objectID) ||
+			(request.access != DeviceIDIndividual &&
+				!objectAllowedByAccess(objectID, request.access)) {
+			anomalies.add(DeviceIDAnomalyObjectOutsideCategory)
+		}
+		if conformityKnown &&
+			!objectAllowedByConformity(objectID, page.Conformity) {
+			anomalies.add(DeviceIDAnomalyObjectOutsideConformity)
+		}
+		page.Objects = append(page.Objects, DeviceIDObject{
+			ID:    objectID,
+			Value: append([]byte(nil), pdu[cursor+2:cursor+2+valueLength]...),
+		})
+		cursor += 2 + valueLength
+	}
+	page.UndecodedOffset = cursor
+	if page.DeclaredObjects != len(page.Objects) {
+		anomalies.add(DeviceIDAnomalyObjectCountMismatch)
+	}
+	if len(page.Objects) == 1 &&
+		len(page.Objects[0].Value) == 1 &&
+		page.DeclaredObjects > len(page.Objects) {
+		anomalies.add(DeviceIDAnomalyCountOnlyPage)
+	}
+	if page.MoreFollows() {
+		count := len(page.Objects)
+		if count == 0 || !deviceIDPageCursorAdvances(
+			page.Objects[count-1].ID,
+			page.NextObjectID,
+			request.extended,
+		) {
+			anomalies.add(DeviceIDAnomalyMoreFollowsWithoutProgress)
+		}
+	}
+	page.Anomalies = anomalies.list
+	return page, nil
+}
+
+// NextDeviceIDPageRequest binds a tolerant continuation request to a page.
+// The page is decoded again from its PDU. Any non-zero more-follows value
+// continues a stream; the next cursor must advance past the requested
+// cursor, with at most one backward wrap on an extended stream, so every
+// traversal terminates.
+func NextDeviceIDPageRequest(page DeviceIDPage) (DeviceIDRequest, error) {
+	decoded, err := DecodeDeviceIDPage(page.Request, page.PDU)
+	if err != nil {
+		return DeviceIDRequest{}, err
+	}
+	return nextDeviceIDPageRequest(decoded)
+}
+
+// AggregateTolerantDeviceID folds a complete tolerant page sequence. The
+// sequence must start at firstRequest and follow each page's continuation.
+// It ends at the first page with more-follows zero, or where the traversal
+// stopped at a limit or at an unavailable continuation; those stops publish
+// the decoded objects with Complete false and a traversal anomaly.
+func AggregateTolerantDeviceID(
+	firstRequest DeviceIDRequest,
+	pages []DeviceIDPage,
+	limits DeviceIDLimits,
+) (DeviceIDTolerantResult, error) {
+	traversal, err := newDeviceIDTolerantTraversal(firstRequest, limits)
+	if err != nil {
+		return DeviceIDTolerantResult{}, err
+	}
+	if len(pages) == 0 || len(pages) > limits.MaxSegments {
+		return DeviceIDTolerantResult{}, malformedDeviceID(
+			firstRequest,
+			0,
+			"segment_count",
+			-1,
+		)
+	}
+	for _, page := range pages {
+		if err := traversal.add(page); err != nil {
+			return DeviceIDTolerantResult{}, err
+		}
+	}
+	return traversal.finish()
+}
+
+type deviceIDTolerantTraversal struct {
+	limits     DeviceIDLimits
+	expected   DeviceIDRequest
+	result     DeviceIDTolerantResult
+	anomalies  deviceIDAnomalySet
+	seen       map[byte]struct{}
+	valueBytes int
+	closed     bool
+}
+
+func newDeviceIDTolerantTraversal(
+	firstRequest DeviceIDRequest,
+	limits DeviceIDLimits,
+) (*deviceIDTolerantTraversal, error) {
+	if err := validateDeviceIDLimits(limits); err != nil {
+		return nil, err
+	}
+	if validateDeviceIDRequest(firstRequest) != nil ||
+		firstRequest.continuation ||
+		firstRequest.wrapped {
+		return nil, protocolError(
+			ErrorInvalidRequest,
+			FunctionEncapsulatedInterface,
+			0,
+			"initial_cursor",
+			3,
+		)
+	}
+	return &deviceIDTolerantTraversal{
+		limits:   limits,
+		expected: firstRequest,
+		seen:     make(map[byte]struct{}),
+	}, nil
+}
+
+// add folds the next page. After it returns nil, the traversal is either
+// closed or expects traversal.expected as the next request.
+func (traversal *deviceIDTolerantTraversal) add(page DeviceIDPage) error {
+	if traversal.closed {
+		return malformedDeviceID(page.Request, 0, "trailing_segment", -1)
+	}
+	if page.Request != traversal.expected {
+		return malformedDeviceID(
+			traversal.expected,
+			0,
+			"continuation_request",
+			-1,
+		)
+	}
+	decoded, err := DecodeDeviceIDPage(page.Request, page.PDU)
+	if err != nil {
+		return err
+	}
+	result := &traversal.result
+	if len(result.Pages) == 0 {
+		result.Conformity = decoded.Conformity
+	} else if decoded.Conformity != result.Conformity {
+		traversal.anomalies.add(DeviceIDAnomalyConformityChange)
+	}
+	result.Pages = append(result.Pages, cloneDeviceIDPage(decoded))
+	for _, anomaly := range decoded.Anomalies {
+		traversal.anomalies.add(anomaly)
+	}
+	for _, object := range decoded.Objects {
+		if _, duplicate := traversal.seen[object.ID]; duplicate {
+			traversal.anomalies.add(DeviceIDAnomalyDuplicateObject)
+			continue
+		}
+		if len(result.Objects) == traversal.limits.MaxObjects ||
+			len(object.Value) > traversal.limits.MaxValueBytes-traversal.valueBytes {
+			traversal.anomalies.add(DeviceIDAnomalyAggregateLimitReached)
+			traversal.close(false)
+			return nil
+		}
+		traversal.seen[object.ID] = struct{}{}
+		traversal.valueBytes += len(object.Value)
+		result.Objects = append(result.Objects, DeviceIDObject{
+			ID:    object.ID,
+			Value: append([]byte(nil), object.Value...),
+		})
+	}
+	if !decoded.MoreFollows() {
+		traversal.close(true)
+		return nil
+	}
+	next, err := nextDeviceIDPageRequest(decoded)
+	if err != nil {
+		traversal.anomalies.add(DeviceIDAnomalyContinuationUnavailable)
+		traversal.close(false)
+		return nil
+	}
+	if len(result.Pages) == traversal.limits.MaxSegments {
+		traversal.anomalies.add(DeviceIDAnomalyPageLimitReached)
+		traversal.close(false)
+		return nil
+	}
+	traversal.expected = next
+	return nil
+}
+
+func (traversal *deviceIDTolerantTraversal) close(complete bool) {
+	traversal.closed = true
+	traversal.result.Complete = complete
+	first := traversal.result.Pages[0].Request
+	if !first.extended && first.access != DeviceIDIndividual {
+		for objectID := byte(0); objectID <= 2; objectID++ {
+			if _, exists := traversal.seen[objectID]; !exists {
+				traversal.anomalies.add(DeviceIDAnomalyMandatoryObjectMissing)
+				break
+			}
+		}
+	}
+}
+
+// finish publishes an independent copy of a closed traversal.
+func (traversal *deviceIDTolerantTraversal) finish() (DeviceIDTolerantResult, error) {
+	if !traversal.closed {
+		return DeviceIDTolerantResult{}, malformedDeviceID(
+			traversal.expected,
+			0,
+			"missing_continuation",
+			-1,
+		)
+	}
+	result := traversal.result
+	result.Objects = cloneDeviceIDObjects(result.Objects)
+	result.Pages = make([]DeviceIDPage, len(traversal.result.Pages))
+	for index, page := range traversal.result.Pages {
+		result.Pages[index] = cloneDeviceIDPage(page)
+	}
+	result.Anomalies = append([]DeviceIDAnomaly(nil), traversal.anomalies.list...)
+	return result, nil
+}
+
+func nextDeviceIDPageRequest(page DeviceIDPage) (DeviceIDRequest, error) {
+	request := page.Request
+	if request.access == DeviceIDIndividual || !page.MoreFollows() {
+		return DeviceIDRequest{}, protocolError(
+			ErrorInvalidRequest,
+			FunctionEncapsulatedInterface,
+			0,
+			"continuation_unavailable",
+			-1,
+		)
+	}
+	next := DeviceIDRequest{
+		access:       request.access,
+		objectID:     page.NextObjectID,
+		continuation: true,
+		extended:     request.extended,
+		wrapped:      request.wrapped,
+	}
+	switch {
+	case page.NextObjectID > request.objectID:
+	case request.extended &&
+		!request.wrapped &&
+		page.NextObjectID < request.objectID:
+		next.wrapped = true
+	default:
+		return DeviceIDRequest{}, malformedDeviceID(
+			request,
+			0,
+			"next_object_id",
+			5,
+		)
+	}
+	if err := validateDeviceIDRequest(next); err != nil {
+		return DeviceIDRequest{}, err
+	}
+	return next, nil
+}
+
+func deviceIDPageCursorAdvances(last byte, next byte, extended bool) bool {
+	return next > last || (extended && last == 0xff && next == 0x00)
+}
+
+type deviceIDAnomalySet struct {
+	list []DeviceIDAnomaly
+}
+
+func (set *deviceIDAnomalySet) add(anomaly DeviceIDAnomaly) {
+	if !containsDeviceIDAnomaly(set.list, anomaly) {
+		set.list = append(set.list, anomaly)
+	}
+}
+
+func containsDeviceIDAnomaly(
+	anomalies []DeviceIDAnomaly,
+	anomaly DeviceIDAnomaly,
+) bool {
+	for _, current := range anomalies {
+		if current == anomaly {
+			return true
+		}
+	}
+	return false
+}
+
+func cloneDeviceIDPage(page DeviceIDPage) DeviceIDPage {
+	page.PDU = cloneBytes(page.PDU)
+	page.Objects = cloneDeviceIDObjects(page.Objects)
+	page.Anomalies = append([]DeviceIDAnomaly(nil), page.Anomalies...)
+	return page
+}

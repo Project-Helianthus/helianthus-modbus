@@ -38,6 +38,7 @@ type ownedRequest struct {
 	function          FunctionCode
 	read              ReadRegistersRequest
 	deviceID          DeviceIDRequest
+	deviceIDDecoding  DeviceIDDecoding
 	state             requestState
 	deadlineOffset    time.Duration
 }
@@ -158,6 +159,7 @@ type WireResponse struct {
 	diagnostic        DiagnosticFrameProvenance
 	words             []uint16
 	deviceIDSegment   *DeviceIDSegment
+	deviceIDPage      *DeviceIDPage
 	bytes             []byte
 }
 
@@ -236,6 +238,20 @@ func (response WireResponse) DeviceIDSegment() (DeviceIDSegment, bool) {
 	segment := *response.deviceIDSegment
 	segment.objects = cloneDeviceIDObjects(segment.objects)
 	return segment, true
+}
+
+// DeviceIDPage returns the tolerantly decoded FC2B page when applicable.
+func (response WireResponse) DeviceIDPage() (DeviceIDPage, bool) {
+	if response.deviceIDPage == nil {
+		return DeviceIDPage{}, false
+	}
+	return cloneDeviceIDPage(*response.deviceIDPage), true
+}
+
+// OversizePDU reports a received PDU longer than MaxPDUSize. Only tolerant
+// framing delivers such a frame.
+func (response WireResponse) OversizePDU() bool {
+	return len(response.bytes) > mbapHeaderSize+MaxPDUSize
 }
 
 // Bytes returns an independent copy of the exact received ADU.
@@ -325,6 +341,7 @@ func (owner *TCPConnectionOwner) reserveReadUntil(
 		requestRead,
 		request,
 		DeviceIDRequest{},
+		DeviceIDDecodingStrict,
 		deadlineOffset,
 	)
 }
@@ -334,16 +351,31 @@ func (owner *TCPConnectionOwner) ReserveDeviceID(
 	unitID byte,
 	request DeviceIDRequest,
 ) (TCPReservation, error) {
-	return owner.reserveDeviceIDUntil(unitID, request, 0)
+	return owner.reserveDeviceIDUntil(
+		unitID,
+		request,
+		DeviceIDDecodingStrict,
+		0,
+	)
 }
 
 func (owner *TCPConnectionOwner) reserveDeviceIDUntil(
 	unitID byte,
 	request DeviceIDRequest,
+	decoding DeviceIDDecoding,
 	deadlineOffset time.Duration,
 ) (TCPReservation, error) {
 	if err := validateDeviceIDRequest(request); err != nil {
 		return TCPReservation{}, err
+	}
+	if !validDeviceIDDecoding(decoding) {
+		return TCPReservation{}, protocolError(
+			ErrorInvalidRequest,
+			FunctionEncapsulatedInterface,
+			0,
+			"device_id_decoding",
+			-1,
+		)
 	}
 	if owner == nil {
 		return TCPReservation{}, invalidOwner()
@@ -355,6 +387,7 @@ func (owner *TCPConnectionOwner) reserveDeviceIDUntil(
 		requestDeviceID,
 		ReadRegistersRequest{},
 		request,
+		decoding,
 		deadlineOffset,
 	)
 }
@@ -374,6 +407,7 @@ func (owner *TCPConnectionOwner) reserve(
 	kind requestKind,
 	read ReadRegistersRequest,
 	deviceID DeviceIDRequest,
+	deviceIDDecoding DeviceIDDecoding,
 	deadlineOffset time.Duration,
 ) (TCPReservation, error) {
 	if owner == nil || owner.closed || owner.retired {
@@ -440,6 +474,7 @@ func (owner *TCPConnectionOwner) reserve(
 		function:          function,
 		read:              read,
 		deviceID:          deviceID,
+		deviceIDDecoding:  deviceIDDecoding,
 		state:             requestReserved,
 		deadlineOffset:    deadlineOffset,
 	}
@@ -1135,6 +1170,7 @@ func (owner *TCPConnectionOwner) correlateActive(
 type decodedOwnedResponse struct {
 	words   []uint16
 	segment *DeviceIDSegment
+	page    *DeviceIDPage
 }
 
 func validateOwnedResponse(
@@ -1146,6 +1182,13 @@ func validateOwnedResponse(
 		response, err := DecodeReadRegistersResponse(request.read, pdu)
 		return decodedOwnedResponse{words: response.Words}, err
 	case requestDeviceID:
+		if request.deviceIDDecoding == DeviceIDDecodingTolerant {
+			page, err := DecodeDeviceIDPage(request.deviceID, pdu)
+			if err != nil {
+				return decodedOwnedResponse{}, err
+			}
+			return decodedOwnedResponse{page: &page}, nil
+		}
 		segment, err := DecodeDeviceIDSegment(request.deviceID, pdu)
 		if err != nil {
 			return decodedOwnedResponse{}, err
@@ -1180,8 +1223,17 @@ func (owner *TCPConnectionOwner) newWireResponse(
 		provenance:        owner.wireProvenance(request, adu),
 		words:             append([]uint16(nil), decoded.words...),
 		deviceIDSegment:   cloneDeviceIDSegment(decoded.segment),
+		deviceIDPage:      cloneDeviceIDPagePointer(decoded.page),
 		bytes:             cloneBytes(adu.raw),
 	}
+}
+
+func cloneDeviceIDPagePointer(page *DeviceIDPage) *DeviceIDPage {
+	if page == nil {
+		return nil
+	}
+	copy := cloneDeviceIDPage(*page)
+	return &copy
 }
 
 func cloneDeviceIDSegment(segment *DeviceIDSegment) *DeviceIDSegment {

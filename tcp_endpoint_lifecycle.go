@@ -14,6 +14,9 @@ func NewTCPEndpoint(config TCPEndpointConfig) (*TCPEndpoint, error) {
 	if remoteErr != nil ||
 		config.MaxBufferedBytes < mbapHeaderSize ||
 		config.MaxBufferedBytes > maxTCPDecoderBuffer ||
+		!validTCPFraming(config.Framing) ||
+		(config.Framing == TCPFramingTolerant &&
+			config.MaxBufferedBytes < maxTolerantTCPADUSize) ||
 		config.MaxRequestDeadline <= 0 ||
 		config.MaxResponseDeadline <= 0 ||
 		config.MaxResponseDeadline > config.MaxRequestDeadline ||
@@ -224,6 +227,7 @@ func (endpoint *TCPEndpoint) OpenConnection(
 		owner,
 		TCPTransportConfig{
 			MaxBufferedBytes: endpoint.config.MaxBufferedBytes,
+			Framing:          endpoint.config.Framing,
 			RequestDeadline:  endpoint.config.MaxRequestDeadline,
 			ResponseDeadline: endpoint.config.MaxResponseDeadline,
 			Clock:            endpoint.config.Clock,

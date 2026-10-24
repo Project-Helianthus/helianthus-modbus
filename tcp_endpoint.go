@@ -19,6 +19,10 @@ type TCPEndpointConfig struct {
 	Clock                    TCPMonotonicClock
 	EventSink                TCPTransportEventSink
 	RuntimeAcquisitionSource *RuntimeAcquisitionSource
+	// Framing selects the MBAP framing policy for every connection. The zero
+	// value is TCPFramingStrict. TCPFramingTolerant requires MaxBufferedBytes
+	// to hold a frame carrying a MaxTolerantPDUSize-byte PDU.
+	Framing TCPFraming
 }
 
 // TCPLogicalRead is one logical FC03/FC04 view in a physical read plan.
@@ -48,6 +52,8 @@ type TCPDeviceIDPlan struct {
 	Timeout            time.Duration
 	Request            DeviceIDRequest
 	Limits             DeviceIDLimits
+	// Decoding selects strict (the zero value) or tolerant page decoding.
+	Decoding DeviceIDDecoding
 }
 
 // TCPConnectionHandle is an opaque endpoint-owned live socket identity.
@@ -97,10 +103,15 @@ func (dispatch TCPDispatch) RequestID() uint64 {
 	return dispatch.requestID
 }
 
-// TCPDeviceIDCompletion is one fully validated endpoint traversal result.
+// TCPDeviceIDCompletion is one endpoint traversal result. A strict traversal
+// publishes only a fully validated Result. A tolerant traversal leaves Result
+// empty and publishes Tolerant, which keeps every page byte and names every
+// deviation.
 type TCPDeviceIDCompletion struct {
 	RequestID uint64
 	Result    DeviceIDResult
+	Decoding  DeviceIDDecoding
+	Tolerant  DeviceIDTolerantResult
 }
 
 // TCPReadBatch retains every frame and successful result from one socket read.
@@ -167,7 +178,9 @@ type endpointRequest struct {
 	deviceID            DeviceIDRequest
 	deviceIDInitial     DeviceIDRequest
 	deviceIDLimits      DeviceIDLimits
+	deviceIDDecoding    DeviceIDDecoding
 	deviceIDSegments    []DeviceIDSegment
+	deviceIDTraversal   *deviceIDTolerantTraversal
 	operationDeadline   time.Duration
 	phase               endpointRequestPhase
 	dispatchID          uint64
@@ -195,6 +208,7 @@ type tcpRequestBackoffState struct {
 	reads              []TCPLogicalRead
 	deviceID           DeviceIDRequest
 	deviceIDLimits     DeviceIDLimits
+	deviceIDDecoding   DeviceIDDecoding
 	requiresBackoff    bool
 	backoffSatisfied   bool
 	backoffWaiting     bool

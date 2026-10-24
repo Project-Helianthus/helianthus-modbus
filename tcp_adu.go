@@ -1,6 +1,9 @@
 package modbus
 
-import "sync"
+import (
+	"fmt"
+	"sync"
+)
 
 const (
 	mbapHeaderSize      = 7
@@ -8,7 +11,66 @@ const (
 	maxMBAPLength       = MaxPDUSize + 1
 	maxTCPADUSize       = mbapHeaderSize - 1 + maxMBAPLength
 	maxTCPDecoderBuffer = 64 * 1024
+	// MaxTolerantPDUSize bounds the PDU that tolerant TCP framing reads.
+	MaxTolerantPDUSize    = 4096
+	maxTolerantMBAPLength = MaxTolerantPDUSize + 1
+	maxTolerantTCPADUSize = mbapHeaderSize - 1 + maxTolerantMBAPLength
 )
+
+// TCPFraming selects how a TCP stream decoder treats the MBAP length field.
+type TCPFraming byte
+
+const (
+	// TCPFramingStrict accepts only frames whose PDU is at most MaxPDUSize
+	// bytes. It is the zero value and the default for every existing caller.
+	TCPFramingStrict TCPFraming = iota
+	// TCPFramingTolerant reads each frame by its MBAP length while the PDU is
+	// at most MaxTolerantPDUSize bytes. A PDU longer than MaxPDUSize is
+	// delivered and reported by TCPADU.OversizePDU instead of being rejected.
+	// A length outside that bound, a non-zero protocol identifier, or a
+	// truncated frame at stream end fails with a *TCPFrameError that keeps
+	// every undelivered byte.
+	TCPFramingTolerant
+)
+
+func validTCPFraming(framing TCPFraming) bool {
+	return framing == TCPFramingStrict || framing == TCPFramingTolerant
+}
+
+func tcpFramingADUBound(framing TCPFraming) int {
+	if framing == TCPFramingTolerant {
+		return maxTolerantTCPADUSize
+	}
+	return maxTCPADUSize
+}
+
+// TCPFrameError is a tolerant-framing failure. Cause carries the stable field
+// and offset classification. Raw keeps every byte the decoder received but
+// did not deliver as a frame, in stream order, so the evidence survives the
+// connection renewal that follows.
+type TCPFrameError struct {
+	Cause *ProtocolError
+	Raw   []byte
+}
+
+func (err *TCPFrameError) Error() string {
+	if err == nil {
+		return "<nil>"
+	}
+	message := "tcp_frame"
+	if err.Cause != nil {
+		message = err.Cause.Error()
+	}
+	return fmt.Sprintf("%s (%d undelivered bytes retained)", message, len(err.Raw))
+}
+
+// Unwrap exposes the protocol classification to errors.As and errors.Is.
+func (err *TCPFrameError) Unwrap() error {
+	if err == nil || err.Cause == nil {
+		return nil
+	}
+	return err.Cause
+}
 
 // TCPADU is one validated, immutable Modbus TCP application data unit.
 type TCPADU struct {
@@ -36,6 +98,12 @@ func (adu TCPADU) PDU() []byte {
 // Bytes returns an independent copy of the complete ADU.
 func (adu TCPADU) Bytes() []byte {
 	return cloneBytes(adu.raw)
+}
+
+// OversizePDU reports a PDU longer than MaxPDUSize. Only tolerant framing
+// delivers such a frame.
+func (adu TCPADU) OversizePDU() bool {
+	return len(adu.pdu) > MaxPDUSize
 }
 
 // EncodeTCPReadADU encodes a validated FC03/FC04 request.
@@ -102,12 +170,35 @@ func encodeTCPADU(
 type TCPStreamDecoder struct {
 	mu          sync.Mutex
 	maxBuffered int
+	framing     TCPFraming
 	buffer      []byte
 }
 
-// NewTCPStreamDecoder creates a decoder with an explicit buffered-byte bound.
+// NewTCPStreamDecoder creates a strict decoder with an explicit
+// buffered-byte bound.
 func NewTCPStreamDecoder(maxBuffered int) (*TCPStreamDecoder, error) {
-	if maxBuffered < mbapHeaderSize || maxBuffered > maxTCPDecoderBuffer {
+	return NewTCPStreamDecoderWithFraming(maxBuffered, TCPFramingStrict)
+}
+
+// NewTCPStreamDecoderWithFraming creates a decoder with an explicit
+// buffered-byte bound and framing policy. Tolerant framing requires a bound
+// that holds the largest tolerant frame.
+func NewTCPStreamDecoderWithFraming(
+	maxBuffered int,
+	framing TCPFraming,
+) (*TCPStreamDecoder, error) {
+	if !validTCPFraming(framing) {
+		return nil, protocolError(
+			ErrorInvalidRequest,
+			0,
+			0,
+			"framing",
+			-1,
+		)
+	}
+	if maxBuffered < mbapHeaderSize ||
+		maxBuffered > maxTCPDecoderBuffer ||
+		(framing == TCPFramingTolerant && maxBuffered < maxTolerantTCPADUSize) {
 		return nil, protocolError(
 			ErrorInvalidRequest,
 			0,
@@ -116,7 +207,10 @@ func NewTCPStreamDecoder(maxBuffered int) (*TCPStreamDecoder, error) {
 			-1,
 		)
 	}
-	return &TCPStreamDecoder{maxBuffered: maxBuffered}, nil
+	return &TCPStreamDecoder{
+		maxBuffered: maxBuffered,
+		framing:     framing,
+	}, nil
 }
 
 // Feed consumes a stream fragment and returns all complete validated ADUs.
@@ -147,15 +241,15 @@ func (decoder *TCPStreamDecoder) Feed(fragment []byte) ([]TCPADU, error) {
 			continue
 		}
 		if decoder.buffer[2] != 0 || decoder.buffer[3] != 0 {
-			return nil, decoder.failMalformed("protocol_id", 2)
+			return nil, decoder.failFrame("protocol_id", 2, frames, fragment)
 		}
 		length := int(decoder.buffer[4])<<8 | int(decoder.buffer[5])
-		if length < minMBAPLength || length > maxMBAPLength {
-			return nil, decoder.failMalformed("length", 4)
+		if length < minMBAPLength || length > decoder.lengthBound() {
+			return nil, decoder.failFrame("length", 4, frames, fragment)
 		}
 		total := 6 + length
-		if total > maxTCPADUSize {
-			return nil, decoder.failMalformed("adu_length", 4)
+		if total > tcpFramingADUBound(decoder.framing) {
+			return nil, decoder.failFrame("adu_length", 4, frames, fragment)
 		}
 		if len(decoder.buffer) < total {
 			if len(fragment) == 0 {
@@ -204,7 +298,50 @@ func (decoder *TCPStreamDecoder) Finish() error {
 	if len(decoder.buffer) == 0 {
 		return nil
 	}
-	return decoder.failMalformed("truncated_adu", len(decoder.buffer))
+	return decoder.failFrame("truncated_adu", len(decoder.buffer), nil, nil)
+}
+
+func (decoder *TCPStreamDecoder) lengthBound() int {
+	if decoder.framing == TCPFramingTolerant {
+		return maxTolerantMBAPLength
+	}
+	return maxMBAPLength
+}
+
+// failFrame resets the decoder after a framing failure. Strict framing keeps
+// the established *ProtocolError. Tolerant framing returns a *TCPFrameError
+// whose Raw holds the frames completed earlier in this call (they are not
+// delivered), the buffered bytes, and the unconsumed fragment remainder.
+func (decoder *TCPStreamDecoder) failFrame(
+	field string,
+	offset int,
+	undelivered []TCPADU,
+	remainder []byte,
+) error {
+	if decoder.framing != TCPFramingTolerant {
+		return decoder.failMalformed(field, offset)
+	}
+	size := len(decoder.buffer) + len(remainder)
+	for _, frame := range undelivered {
+		size += len(frame.raw)
+	}
+	raw := make([]byte, 0, size)
+	for _, frame := range undelivered {
+		raw = append(raw, frame.raw...)
+	}
+	raw = append(raw, decoder.buffer...)
+	raw = append(raw, remainder...)
+	decoder.buffer = nil
+	return &TCPFrameError{
+		Cause: protocolError(
+			ErrorMalformedResponse,
+			0,
+			0,
+			field,
+			offset,
+		),
+		Raw: raw,
+	}
 }
 
 func (decoder *TCPStreamDecoder) failMalformed(

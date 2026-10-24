@@ -207,6 +207,15 @@ func (endpoint *TCPEndpoint) EnqueueDeviceID(
 	if err := validateDeviceIDLimits(plan.Limits); err != nil {
 		return TCPRequestHandle{}, err
 	}
+	if !validDeviceIDDecoding(plan.Decoding) {
+		return TCPRequestHandle{}, protocolError(
+			ErrorInvalidRequest,
+			FunctionEncapsulatedInterface,
+			0,
+			"device_id_decoding",
+			-1,
+		)
+	}
 	endpoint.enqueueMu.Lock()
 	defer endpoint.enqueueMu.Unlock()
 	if !endpoint.timelineAvailable() {
@@ -264,6 +273,7 @@ func (endpoint *TCPEndpoint) EnqueueDeviceID(
 			deadlineIdentity:   plan.DeadlineIdentity,
 			deviceID:           plan.Request,
 			deviceIDLimits:     plan.Limits,
+			deviceIDDecoding:   plan.Decoding,
 		},
 	}
 	fields := tcpEventFields{
@@ -322,6 +332,7 @@ func (endpoint *TCPEndpoint) EnqueueDeviceID(
 		deviceID:            plan.Request,
 		deviceIDInitial:     plan.Request,
 		deviceIDLimits:      plan.Limits,
+		deviceIDDecoding:    plan.Decoding,
 		operationDeadline:   deadline,
 		phase:               endpointRequestQueued,
 	}

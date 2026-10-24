@@ -214,6 +214,9 @@ func (endpoint *TCPEndpoint) Read(
 			retiredFields.WireOutcome = response.Outcome()
 			fields = retiredFields
 		}
+		if response.OversizePDU() {
+			fields.Detail = tcpOversizePDUDetail
+		}
 		if endpoint.beforeOutcome != nil {
 			endpoint.beforeOutcome()
 		}

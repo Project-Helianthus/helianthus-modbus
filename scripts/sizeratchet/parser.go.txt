@@ -1,0 +1,81 @@
+// Command sizeratchet reports physical declaration spans from the Go parser.
+// It is an offline guard helper, not part of the Modbus runtime. Named functions,
+// methods and function literals count; spans include signatures and closing braces.
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"os"
+	"strconv"
+)
+
+type declaration struct {
+	// Symbol identifies a declaration within its source file.
+	Symbol string `json:"symbol"`
+	// Lines counts the physical span, including the signature and closing line.
+	Lines int `json:"lines"`
+}
+
+func declarations(path string) ([]declaration, error) {
+	fs := token.NewFileSet()
+	file, err := parser.ParseFile(fs, path, nil, parser.AllErrors)
+	if err != nil {
+		return nil, err
+	}
+	result := []declaration{}
+	ordinal := 0
+	ast.Inspect(file, func(node ast.Node) bool {
+		symbol := ""
+		switch n := node.(type) {
+		case *ast.FuncDecl:
+			symbol = n.Name.Name
+			if n.Recv != nil {
+				receiver := n.Recv.List[0].Type
+				if pointer, ok := receiver.(*ast.StarExpr); ok {
+					receiver = pointer.X
+				}
+				if generic, ok := receiver.(*ast.IndexExpr); ok {
+					receiver = generic.X
+				}
+				if generic, ok := receiver.(*ast.IndexListExpr); ok {
+					receiver = generic.X
+				}
+				if ident, ok := receiver.(*ast.Ident); ok {
+					symbol = ident.Name + "." + symbol
+				}
+			}
+			if symbol == "init" {
+				ordinal++
+				symbol += "#" + strconv.Itoa(ordinal)
+			}
+		case *ast.FuncLit:
+			ordinal++
+			symbol = "literal#" + strconv.Itoa(ordinal)
+		default:
+			return true
+		}
+		result = append(result, declaration{symbol, fs.PositionFor(node.End(), false).Line - fs.PositionFor(node.Pos(), false).Line + 1})
+		return true
+	})
+	return result, nil
+}
+
+func main() {
+	result := map[string][]declaration{}
+	for _, path := range os.Args[1:] {
+		functions, err := declarations(path)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		result[path] = functions
+	}
+	if err := json.NewEncoder(os.Stdout).Encode(result); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}

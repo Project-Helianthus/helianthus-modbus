@@ -1,0 +1,126 @@
+{
+  "version": 1,
+  "golangci_lint": "2.11.4",
+  "entries": [
+    {
+      "path": "device_id.go",
+      "symbol": "DeviceIDBasic",
+      "rule": "revive/exported",
+      "count": 1
+    },
+    {
+      "path": "pdu.go",
+      "symbol": "ErrorUnsupportedOperation",
+      "rule": "revive/exported",
+      "count": 1
+    },
+    {
+      "path": "pdu.go",
+      "symbol": "FunctionReadHoldingRegisters",
+      "rule": "revive/exported",
+      "count": 1
+    },
+    {
+      "path": "pdu.go",
+      "symbol": "HoldingRegisters",
+      "rule": "revive/exported",
+      "count": 1
+    },
+    {
+      "path": "rtu_capability.go",
+      "symbol": "RTUMaturityExperimental",
+      "rule": "revive/exported",
+      "count": 1
+    },
+    {
+      "path": "rtu_endpoint.go",
+      "symbol": "RTUEventBeginRead",
+      "rule": "revive/exported",
+      "count": 1
+    },
+    {
+      "path": "rtu_endpoint.go",
+      "symbol": "RTUStateIdle",
+      "rule": "revive/exported",
+      "count": 1
+    },
+    {
+      "path": "rtu_production.go",
+      "symbol": "RTUReadAdmissionRequest",
+      "rule": "revive/exported",
+      "count": 1
+    },
+    {
+      "path": "rtu_timing.go",
+      "symbol": "RTUParityNone",
+      "rule": "revive/exported",
+      "count": 1
+    },
+    {
+      "path": "runtime_acquisition.go",
+      "symbol": "RuntimeCapabilityClaimed",
+      "rule": "revive/exported",
+      "count": 1
+    },
+    {
+      "path": "runtime_normalization.go",
+      "symbol": "RuntimeAcquisitionSourceRuntime",
+      "rule": "revive/exported",
+      "count": 1
+    },
+    {
+      "path": "scripts/acceptance_evidence/main.go",
+      "symbol": "<package>",
+      "rule": "revive/package-comments",
+      "count": 1
+    },
+    {
+      "path": "scripts/read_only_surface/main.go",
+      "symbol": "<package>",
+      "rule": "revive/package-comments",
+      "count": 1
+    },
+    {
+      "path": "tcp_coalescing.go",
+      "symbol": "DependentQueued",
+      "rule": "revive/exported",
+      "count": 1
+    },
+    {
+      "path": "tcp_endpoint_lifecycle.go",
+      "symbol": "NewTCPEndpoint",
+      "rule": "revive/exported",
+      "count": 1
+    },
+    {
+      "path": "tcp_endpoint_read.go",
+      "symbol": "TCPEndpoint.EnqueueRead",
+      "rule": "revive/exported",
+      "count": 1
+    },
+    {
+      "path": "tcp_owner.go",
+      "symbol": "AbandonTimeout",
+      "rule": "revive/exported",
+      "count": 1
+    },
+    {
+      "path": "tcp_owner.go",
+      "symbol": "TransmitProvableZero",
+      "rule": "revive/exported",
+      "count": 1
+    },
+    {
+      "path": "tcp_owner.go",
+      "symbol": "WireSuccessfulData",
+      "rule": "revive/exported",
+      "count": 1
+    },
+    {
+      "path": "tcp_transport.go",
+      "symbol": "TCPEventEnqueue",
+      "rule": "revive/exported",
+      "count": 1
+    }
+  ]
+}

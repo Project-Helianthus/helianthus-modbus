@@ -1,0 +1,18 @@
+version: "2"
+run:
+  timeout: 2m
+linters:
+  default: standard
+  # The baseline wrapper enables revive; direct runs retain the standard checks.
+  settings:
+    revive:
+      rules:
+        - name: exported
+        - name: var-naming
+        - name: package-comments
+  exclusions:
+    presets: []
+    paths: []
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

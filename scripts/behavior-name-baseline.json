@@ -1,0 +1,624 @@
+{
+  "version": 1,
+  "exceptions": [
+    {
+      "token": "CRC16",
+      "reason": "Modbus RTU checksum domain identifier."
+    },
+    {
+      "token": "FC03",
+      "reason": "Read Holding Registers; local public contract in doc.go and README.md."
+    },
+    {
+      "token": "FC04",
+      "reason": "Read Input Registers; local public contract in doc.go and README.md."
+    },
+    {
+      "token": "FC2B",
+      "reason": "Read Device Identification function; local public contract in doc.go and README.md."
+    },
+    {
+      "token": "INT16",
+      "reason": "Go integer type domain identifier."
+    },
+    {
+      "token": "INT32",
+      "reason": "Go integer type domain identifier."
+    },
+    {
+      "token": "INT64",
+      "reason": "Go integer type domain identifier."
+    },
+    {
+      "token": "INT8",
+      "reason": "Go integer type domain identifier."
+    },
+    {
+      "token": "MEI0E",
+      "reason": "Read Device Identification MEI type; local public contract in doc.go and README.md."
+    },
+    {
+      "token": "SHA256",
+      "reason": "Digest algorithm domain identifier."
+    },
+    {
+      "token": "UINT16",
+      "reason": "Go integer type domain identifier."
+    },
+    {
+      "token": "UINT32",
+      "reason": "Go integer type domain identifier."
+    },
+    {
+      "token": "UINT64",
+      "reason": "Go integer type domain identifier."
+    },
+    {
+      "token": "UINT8",
+      "reason": "Go integer type domain identifier."
+    },
+    {
+      "token": "UTF8",
+      "reason": "Unicode encoding domain identifier."
+    },
+    {
+      "token": "RTUFC03",
+      "reason": "RTU framing of Read Holding Registers; public contract in doc.go and rtu_adu.go."
+    },
+    {
+      "token": "T15",
+      "reason": "RTU inter-character timing threshold; public implementation in rtu_timing.go."
+    },
+    {
+      "token": "T35",
+      "reason": "RTU inter-frame timing threshold; public implementation in rtu_timing.go."
+    }
+  ],
+  "baseline": [
+    {
+      "path": "backoff_rejected_budget_test.go",
+      "symbol": "TestS22AcceptedBudgetClampsJitter",
+      "category": "test"
+    },
+    {
+      "path": "backoff_rejected_budget_test.go",
+      "symbol": "TestS22CorrelatedResetAndConnectedControl",
+      "category": "test"
+    },
+    {
+      "path": "backoff_rejected_budget_test.go",
+      "symbol": "TestS22RejectedBudgetPreservesRetryState",
+      "category": "test"
+    },
+    {
+      "path": "backoff_rejected_budget_test.go",
+      "symbol": "s22BudgetJitter",
+      "category": "identifier"
+    },
+    {
+      "path": "coalescing_cancel_offset_residuals_test.go",
+      "symbol": "TestU10DuplicateCancelIdentifiesDependentOnLiveGroup",
+      "category": "test"
+    },
+    {
+      "path": "coalescing_cancel_offset_residuals_test.go",
+      "symbol": "TestU10QueuedCancellationRecomputesOffsetsAndExtrema",
+      "category": "test"
+    },
+    {
+      "path": "coalescing_cancel_offset_residuals_test.go",
+      "symbol": "u10AssertSurvivors",
+      "category": "identifier"
+    },
+    {
+      "path": "coalescing_cancel_offset_residuals_test.go",
+      "symbol": "u10QueuedGroup",
+      "category": "identifier"
+    },
+    {
+      "path": "coalescing_cancel_permutations_test.go",
+      "symbol": "TestS20QueuedCancellationPermutations",
+      "category": "test"
+    },
+    {
+      "path": "coalescing_late_identity_test.go",
+      "symbol": "TestU19LateIdentityMismatch",
+      "category": "test"
+    },
+    {
+      "path": "coalescing_late_identity_test.go",
+      "symbol": "TestU19MatchingIdentityControl",
+      "category": "test"
+    },
+    {
+      "path": "coalescing_late_identity_test.go",
+      "symbol": "u19IntentOrders",
+      "category": "identifier"
+    },
+    {
+      "path": "coalescing_late_identity_test.go",
+      "symbol": "u19ReadIntents",
+      "category": "identifier"
+    },
+    {
+      "path": "coalescing_permutation_geometry_test.go",
+      "symbol": "TestS19ThreeReadGeometry",
+      "category": "test"
+    },
+    {
+      "path": "device_id_deep_ownership_test.go",
+      "symbol": "TestQ21DeviceIDDeepOwnership",
+      "category": "test"
+    },
+    {
+      "path": "device_id_exact_budget_test.go",
+      "symbol": "TestU20DeviceIDExactAggregateBudgets",
+      "category": "test"
+    },
+    {
+      "path": "device_id_wrap_partition_test.go",
+      "symbol": "TestQ22ExtendedDeviceIDEveryWrapPartition",
+      "category": "test"
+    },
+    {
+      "path": "device_id_wrap_partition_test.go",
+      "symbol": "TestQ22ExtendedDeviceIDLateProgressMutations",
+      "category": "test"
+    },
+    {
+      "path": "normalization_buffer_ownership_test.go",
+      "symbol": "TestU18NormalizationBufferOwnership",
+      "category": "test"
+    },
+    {
+      "path": "normalization_buffer_ownership_test.go",
+      "symbol": "appendU18NormalizationWithPrefix",
+      "category": "identifier"
+    },
+    {
+      "path": "normalization_buffer_ownership_test.go",
+      "symbol": "assertU18NormalizationOriginal",
+      "category": "identifier"
+    },
+    {
+      "path": "normalization_extension_budget_test.go",
+      "symbol": "TestU16NormalizationExtensionBudgets",
+      "category": "test"
+    },
+    {
+      "path": "normalization_extension_budget_test.go",
+      "symbol": "TestU16NormalizationRecordByteBudget",
+      "category": "test"
+    },
+    {
+      "path": "normalization_extension_budget_test.go",
+      "symbol": "u16CheckNormalization",
+      "category": "identifier"
+    },
+    {
+      "path": "normalization_extension_budget_test.go",
+      "symbol": "u16NormalizationClock",
+      "category": "identifier"
+    },
+    {
+      "path": "normalization_extension_budget_test.go",
+      "symbol": "u16NormalizationConfig",
+      "category": "identifier"
+    },
+    {
+      "path": "normalization_extension_budget_test.go",
+      "symbol": "u16NormalizationJSON",
+      "category": "identifier"
+    },
+    {
+      "path": "normalization_extension_budget_test.go",
+      "symbol": "u16NormalizationSource",
+      "category": "identifier"
+    },
+    {
+      "path": "normalization_json_key_residuals_test.go",
+      "symbol": "TestU17EscapedDuplicateNormalizationKeys",
+      "category": "test"
+    },
+    {
+      "path": "normalization_json_key_residuals_test.go",
+      "symbol": "TestU17NormalizationTrailingTokens",
+      "category": "test"
+    },
+    {
+      "path": "normalization_json_key_residuals_test.go",
+      "symbol": "u17AssertNormalizationRejected",
+      "category": "identifier"
+    },
+    {
+      "path": "normalization_json_key_residuals_test.go",
+      "symbol": "u17NormalizationCore",
+      "category": "identifier"
+    },
+    {
+      "path": "policy/m1-02-acceptance.json",
+      "symbol": "m1-02-acceptance.json",
+      "category": "filename"
+    },
+    {
+      "path": "policy/m1-02-transport-matrix.json",
+      "symbol": "m1-02-transport-matrix.json",
+      "category": "filename"
+    },
+    {
+      "path": "policy/m1-03-acceptance.json",
+      "symbol": "m1-03-acceptance.json",
+      "category": "filename"
+    },
+    {
+      "path": "policy/m1-03-transport-matrix.json",
+      "symbol": "m1-03-transport-matrix.json",
+      "category": "filename"
+    },
+    {
+      "path": "policy/m1-04-acceptance.json",
+      "symbol": "m1-04-acceptance.json",
+      "category": "filename"
+    },
+    {
+      "path": "policy/m1-04-transport-matrix.json",
+      "symbol": "m1-04-transport-matrix.json",
+      "category": "filename"
+    },
+    {
+      "path": "policy/m1-06-conformance.json",
+      "symbol": "m1-06-conformance.json",
+      "category": "filename"
+    },
+    {
+      "path": "policy/phase1-readonly.json",
+      "symbol": "phase1-readonly.json",
+      "category": "filename"
+    },
+    {
+      "path": "private_function_boundary_followup_test.go",
+      "symbol": "TestQ01NormalRTULengthBoundaries",
+      "category": "test"
+    },
+    {
+      "path": "private_function_boundary_followup_test.go",
+      "symbol": "TestQ01NormalTCPLengthBoundaries",
+      "category": "test"
+    },
+    {
+      "path": "private_function_boundary_followup_test.go",
+      "symbol": "TestQ01PrivateCodeBoundaries",
+      "category": "test"
+    },
+    {
+      "path": "private_function_boundary_followup_test.go",
+      "symbol": "TestQ01PrivatePayloadBoundaries",
+      "category": "test"
+    },
+    {
+      "path": "private_function_boundary_followup_test.go",
+      "symbol": "q01Error",
+      "category": "identifier"
+    },
+    {
+      "path": "private_function_boundary_followup_test.go",
+      "symbol": "q01RTU",
+      "category": "identifier"
+    },
+    {
+      "path": "private_function_boundary_followup_test.go",
+      "symbol": "q01Request",
+      "category": "identifier"
+    },
+    {
+      "path": "private_function_boundary_followup_test.go",
+      "symbol": "q01TCP",
+      "category": "identifier"
+    },
+    {
+      "path": "private_function_evidence_ownership_test.go",
+      "symbol": "TestK18BinaryExchangeEvidenceOwnership",
+      "category": "test"
+    },
+    {
+      "path": "private_function_evidence_ownership_test.go",
+      "symbol": "TestK18BinaryPayloadBoundsAndAdmission",
+      "category": "test"
+    },
+    {
+      "path": "private_function_evidence_ownership_test.go",
+      "symbol": "TestK18MalformedBinaryExchangeRetainsDetachedPartialEvidence",
+      "category": "test"
+    },
+    {
+      "path": "private_function_evidence_ownership_test.go",
+      "symbol": "k18Equal",
+      "category": "identifier"
+    },
+    {
+      "path": "private_function_evidence_ownership_test.go",
+      "symbol": "k18Mutate",
+      "category": "identifier"
+    },
+    {
+      "path": "private_transaction_transition_test.go",
+      "symbol": "TestQ23PrivateTransactionTransitions",
+      "category": "test"
+    },
+    {
+      "path": "read_exception_code_matrix_test.go",
+      "symbol": "TestS18ReadExceptionFunctionAndLengthMatrix",
+      "category": "test"
+    },
+    {
+      "path": "read_exception_code_matrix_test.go",
+      "symbol": "TestS18ReadExceptionOpaqueCodeMatrix",
+      "category": "test"
+    },
+    {
+      "path": "read_intent_final_register_test.go",
+      "symbol": "TestU11ReadIntentFinalRegister",
+      "category": "test"
+    },
+    {
+      "path": "read_intent_final_register_test.go",
+      "symbol": "TestU11ReadIntentRejectsForgedOverflow",
+      "category": "test"
+    },
+    {
+      "path": "read_intent_final_register_test.go",
+      "symbol": "TestU11ReadIntentRejectsZeroRequest",
+      "category": "test"
+    },
+    {
+      "path": "read_intent_final_register_test.go",
+      "symbol": "TestU11ReadIntentValidIdentity",
+      "category": "test"
+    },
+    {
+      "path": "read_intent_final_register_test.go",
+      "symbol": "u11ReadIntentSpec",
+      "category": "identifier"
+    },
+    {
+      "path": "read_range_last_register_test.go",
+      "symbol": "TestS17ForgedTableAndQuantityValidation",
+      "category": "test"
+    },
+    {
+      "path": "read_range_last_register_test.go",
+      "symbol": "TestS17LastRegisterEveryReadWidth",
+      "category": "test"
+    },
+    {
+      "path": "read_range_last_register_test.go",
+      "symbol": "TestS17NextOffsetRejectsRangeWrap",
+      "category": "test"
+    },
+    {
+      "path": "rtu_crc_bit_corruption_test.go",
+      "symbol": "TestS23CRCReferenceVector",
+      "category": "test"
+    },
+    {
+      "path": "rtu_crc_bit_corruption_test.go",
+      "symbol": "TestS23RTUReadResponseSingleBitCorruption",
+      "category": "test"
+    },
+    {
+      "path": "rtu_crc_bit_corruption_test.go",
+      "symbol": "s23AssertRawOwnership",
+      "category": "identifier"
+    },
+    {
+      "path": "rtu_crc_bit_corruption_test.go",
+      "symbol": "s23CRC",
+      "category": "identifier"
+    },
+    {
+      "path": "rtu_pty_preflight_test.go",
+      "symbol": "TestM58PTYPreflight",
+      "category": "test"
+    },
+    {
+      "path": "rtu_timing_threshold_grid_test.go",
+      "symbol": "TestS24RTUTimingThresholdGrid",
+      "category": "test"
+    },
+    {
+      "path": "runtime_acquisition_callback_cancel_test.go",
+      "symbol": "TestK17RetiredAttemptRejectsPausedCallbackWithSameKeySuccessor",
+      "category": "test"
+    },
+    {
+      "path": "runtime_acquisition_callback_cancel_test.go",
+      "symbol": "k17CallbackResult",
+      "category": "identifier"
+    },
+    {
+      "path": "runtime_acquisition_callback_cancel_test.go",
+      "symbol": "k17Deliver",
+      "category": "identifier"
+    },
+    {
+      "path": "runtime_acquisition_callback_cancel_test.go",
+      "symbol": "k17FakeTransport",
+      "category": "identifier"
+    },
+    {
+      "path": "runtime_acquisition_callback_cancel_test.go",
+      "symbol": "k17Wait",
+      "category": "identifier"
+    },
+    {
+      "path": "runtime_acquisition_test.go",
+      "symbol": "TestM106BoundsExhaustionAndDeterministicTombstones",
+      "category": "test"
+    },
+    {
+      "path": "runtime_acquisition_test.go",
+      "symbol": "TestM106CancelOpenAcceptsDrainedExactTerminalInstance",
+      "category": "test"
+    },
+    {
+      "path": "runtime_acquisition_test.go",
+      "symbol": "TestM106CancelOpenDrainedInstanceLinearizesOnceAndStaysExact",
+      "category": "test"
+    },
+    {
+      "path": "runtime_acquisition_test.go",
+      "symbol": "TestM106CancelOpenUsesExactInstanceAndDrainsMembers",
+      "category": "test"
+    },
+    {
+      "path": "runtime_acquisition_test.go",
+      "symbol": "TestM106CoalescedCapabilitiesAreIndependentAndCopiesShareOneClaim",
+      "category": "test"
+    },
+    {
+      "path": "runtime_acquisition_test.go",
+      "symbol": "TestM106ConcurrentRegistrationUsesDeclaredOrdinals",
+      "category": "test"
+    },
+    {
+      "path": "runtime_acquisition_test.go",
+      "symbol": "TestM106FailureAndExpiryReclaimSynchronously",
+      "category": "test"
+    },
+    {
+      "path": "runtime_acquisition_test.go",
+      "symbol": "TestM106MembershipCloseRejectsLateRegistration",
+      "category": "test"
+    },
+    {
+      "path": "runtime_acquisition_test.go",
+      "symbol": "TestM106NonSuccessfulOutcomesNeverIssueCapabilities",
+      "category": "test"
+    },
+    {
+      "path": "runtime_acquisition_test.go",
+      "symbol": "TestM106NormalizationAndActivationBoundsFailClosed",
+      "category": "test"
+    },
+    {
+      "path": "runtime_acquisition_test.go",
+      "symbol": "TestM106NormalizationExactSerializationBoundary",
+      "category": "test"
+    },
+    {
+      "path": "runtime_acquisition_test.go",
+      "symbol": "TestM106NormalizationParseLinearizesWithRestartExport",
+      "category": "test"
+    },
+    {
+      "path": "runtime_acquisition_test.go",
+      "symbol": "TestM106NormalizationRequiredFieldsRejectNullAndWrongTypes",
+      "category": "test"
+    },
+    {
+      "path": "runtime_acquisition_test.go",
+      "symbol": "TestM106PrivateCapabilityStateIsNotSerializableOrReconstructable",
+      "category": "test"
+    },
+    {
+      "path": "runtime_acquisition_test.go",
+      "symbol": "TestM106RestartExportRetiresSourceAndPreservesSequenceUniqueness",
+      "category": "test"
+    },
+    {
+      "path": "runtime_acquisition_test.go",
+      "symbol": "TestM106RuntimeOnlyIssuanceAndLosslessProvenance",
+      "category": "test"
+    },
+    {
+      "path": "scheduler_cursor_churn_test.go",
+      "symbol": "TestS21SchedulerCursorChurn",
+      "category": "test"
+    },
+    {
+      "path": "scheduler_cursor_churn_test.go",
+      "symbol": "TestS21SchedulerCursorRemovalOrder",
+      "category": "test"
+    },
+    {
+      "path": "scripts/validate_m1_02_acceptance.py",
+      "symbol": "validate_m1_02_acceptance.py",
+      "category": "filename"
+    },
+    {
+      "path": "scripts/validate_m1_03_acceptance.py",
+      "symbol": "validate_m1_03_acceptance.py",
+      "category": "filename"
+    },
+    {
+      "path": "scripts/validate_m1_04_acceptance.py",
+      "symbol": "validate_m1_04_acceptance.py",
+      "category": "filename"
+    },
+    {
+      "path": "scripts/validate_m1_06_conformance.py",
+      "symbol": "validate_m1_06_conformance.py",
+      "category": "filename"
+    },
+    {
+      "path": "tcp_decoder_error_recovery_test.go",
+      "symbol": "TestQ20TCPDecoderErrorRecovery",
+      "category": "test"
+    },
+    {
+      "path": "tcp_partition_equivalence_test.go",
+      "symbol": "TestQ19TCPPartitionEquivalence",
+      "category": "test"
+    },
+    {
+      "path": "tcp_partition_equivalence_test.go",
+      "symbol": "TestQ19TCPTruncatedSuffixPreservesFirstADU",
+      "category": "test"
+    },
+    {
+      "path": "tcp_partition_equivalence_test.go",
+      "symbol": "q19EncodedStream",
+      "category": "identifier"
+    },
+    {
+      "path": "tcp_partition_equivalence_test.go",
+      "symbol": "q19ExpectedADU",
+      "category": "identifier"
+    },
+    {
+      "path": "tcp_partition_equivalence_test.go",
+      "symbol": "q19RequireADUs",
+      "category": "identifier"
+    },
+    {
+      "path": "tests/test_m1_02_acceptance.py",
+      "symbol": "test_m1_02_acceptance.py",
+      "category": "filename"
+    },
+    {
+      "path": "tests/test_m1_03_acceptance.py",
+      "symbol": "test_m1_03_acceptance.py",
+      "category": "filename"
+    },
+    {
+      "path": "tests/test_m1_04_acceptance.py",
+      "symbol": "test_m1_04_acceptance.py",
+      "category": "filename"
+    },
+    {
+      "path": "tests/test_m1_06_conformance.py",
+      "symbol": "test_m1_06_conformance.py",
+      "category": "filename"
+    },
+    {
+      "path": "typed_read_length_matrix_test.go",
+      "symbol": "TestQ24TypedReadLengthMatrix",
+      "category": "test"
+    },
+    {
+      "path": "typed_read_word_order_test.go",
+      "symbol": "TestU21TypedReadResponseOwnership",
+      "category": "test"
+    }
+  ]
+}

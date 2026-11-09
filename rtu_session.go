@@ -12,19 +12,28 @@ const defaultRTUSessionMaxResponseFrames uint8 = 4
 
 // RTUByteStream is the deliberately injected byte-level boundary for an RTU
 // session. Implementations own physical-device access, cancellation, and the
-// monotonic receipt timestamp for every byte; this package never opens a
-// serial device itself.
+// monotonic receipt timestamp for every byte. Session construction never opens
+// a serial device; OpenRTUSerial is the separate explicit serial boundary.
 type RTUByteStream interface {
+	// ReadRTUByte returns one byte and its receipt offset on the stream timeline, or a
+	// read/cancellation error.
 	ReadRTUByte(context.Context) (byte, time.Duration, error)
+	// WriteRTU writes opaque frame bytes and returns the actual byte count even on failure.
 	WriteRTU(context.Context, []byte) (int, error)
+	// RTUOffset returns the stream-relative monotonic offset as a nonnegative duration.
 	RTUOffset() time.Duration
 }
 
 // RTUSessionConfig configures one default-denied, bounded RTU exchange owner.
 type RTUSessionConfig struct {
-	Stream            RTUByteStream
-	Timing            RTUTiming
-	Enabled           bool
+	// Stream is the explicitly supplied byte transport; session construction does not discover a
+	// device.
+	Stream RTUByteStream
+	// Timing supplies validated character, frame, and finite recovery intervals.
+	Timing RTUTiming
+	// Enabled must be explicitly true before the configured outbound path can be constructed.
+	Enabled bool
+	// MaxResponseFrames caps retained response frames at eight; zero selects the default of four.
 	MaxResponseFrames uint8
 }
 

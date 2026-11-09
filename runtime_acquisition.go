@@ -58,67 +58,102 @@ func newRuntimeViewEligibility(
 
 // RuntimeAcquisitionClock supplies the source-owned monotonic claim time.
 type RuntimeAcquisitionClock interface {
+	// Now returns a nonnegative, nondecreasing monotonic offset as a duration.
 	Now() time.Duration
 }
 
 // RuntimeAcquisitionLimits closes every source-owned allocation dimension.
 type RuntimeAcquisitionLimits struct {
-	MaxLiveCapabilities                        int
-	MaxAttempts                                int
-	MaxMembersPerAttempt                       int
-	AttemptKeyMaxUTF8Bytes                     int
-	SourceEvidenceIDMaxUTF8Bytes               int
-	NormalizationRecordMaxEncodedBytes         int
-	NormalizationRequiredStringMaxUTF8Bytes    int
-	NormalizationExtensionCountMax             int
-	NormalizationExtensionKeyMaxUTF8Bytes      int
+	// MaxLiveCapabilities caps simultaneously retained claimable capabilities.
+	MaxLiveCapabilities int
+	// MaxAttempts bounds retained active and drained acquisition attempt identities.
+	MaxAttempts int
+	// MaxMembersPerAttempt caps acquisition membership in one attempt.
+	MaxMembersPerAttempt int
+	// AttemptKeyMaxUTF8Bytes caps the UTF-8 byte length of an attempt key.
+	AttemptKeyMaxUTF8Bytes int
+	// SourceEvidenceIDMaxUTF8Bytes caps the UTF-8 byte length of a source evidence identifier.
+	SourceEvidenceIDMaxUTF8Bytes int
+	// NormalizationRecordMaxEncodedBytes caps the complete retained JSON record in bytes.
+	NormalizationRecordMaxEncodedBytes int
+	// NormalizationRequiredStringMaxUTF8Bytes caps each required documentary string in UTF-8 bytes.
+	NormalizationRequiredStringMaxUTF8Bytes int
+	// NormalizationExtensionCountMax caps the number of unknown JSON extension fields.
+	NormalizationExtensionCountMax int
+	// NormalizationExtensionKeyMaxUTF8Bytes caps each extension key in UTF-8 bytes.
+	NormalizationExtensionKeyMaxUTF8Bytes int
+	// NormalizationExtensionValueMaxEncodedBytes caps each extension value's encoded JSON bytes.
 	NormalizationExtensionValueMaxEncodedBytes int
-	RetainedDiagnosticCountPerObjectMax        int
-	RetainedDiagnosticMaxUTF8Bytes             int
-	CapabilityTombstoneLimit                   int
-	CapabilityTombstoneMaxEncodedBytes         int
+	// RetainedDiagnosticCountPerObjectMax caps diagnostic strings retained per object.
+	RetainedDiagnosticCountPerObjectMax int
+	// RetainedDiagnosticMaxUTF8Bytes caps each retained diagnostic string in UTF-8 bytes.
+	RetainedDiagnosticMaxUTF8Bytes int
+	// CapabilityTombstoneLimit caps retained terminal capability audit records.
+	CapabilityTombstoneLimit int
+	// CapabilityTombstoneMaxEncodedBytes caps encoded terminal capability audit metadata in bytes.
+	CapabilityTombstoneMaxEncodedBytes int
 }
 
 // RuntimeAcquisitionConfig activates one bounded source owner.
 type RuntimeAcquisitionConfig struct {
-	Limits        RuntimeAcquisitionLimits
+	// Limits supplies the finite bounds validated before allocating owner state.
+	Limits RuntimeAcquisitionLimits
+	// ClaimLifetime is the positive duration during which a capability may be claimed.
 	ClaimLifetime time.Duration
-	Clock         RuntimeAcquisitionClock
-	Restart       *RuntimeAcquisitionRestartState
+	// Clock supplies the owner's monotonic time domain.
+	Clock RuntimeAcquisitionClock
+	// Restart optionally restores bounded terminal audit metadata without restoring live authority.
+	Restart *RuntimeAcquisitionRestartState
 }
 
 // RuntimeCapabilityTerminalOutcome is the closed terminal capability enum.
 type RuntimeCapabilityTerminalOutcome string
 
 const (
-	RuntimeCapabilityClaimed   RuntimeCapabilityTerminalOutcome = "claimed"
+	// RuntimeCapabilityClaimed records a capability consumed by its single winning claimant.
+	RuntimeCapabilityClaimed RuntimeCapabilityTerminalOutcome = "claimed"
+	// RuntimeCapabilityCancelled records cancellation as a terminal capability state.
 	RuntimeCapabilityCancelled RuntimeCapabilityTerminalOutcome = "cancelled"
-	RuntimeCapabilityFailed    RuntimeCapabilityTerminalOutcome = "failed"
-	RuntimeCapabilityExpired   RuntimeCapabilityTerminalOutcome = "expired"
+	// RuntimeCapabilityFailed records failure as a terminal capability state.
+	RuntimeCapabilityFailed RuntimeCapabilityTerminalOutcome = "failed"
+	// RuntimeCapabilityExpired records expiration of the claim lifetime.
+	RuntimeCapabilityExpired RuntimeCapabilityTerminalOutcome = "expired"
 )
 
 // RuntimeCapabilityTombstone is the complete non-reconstructing audit record.
 type RuntimeCapabilityTombstone struct {
-	SchemaVersion    int                              `json:"schema_version"`
-	TerminalSequence uint64                           `json:"terminal_sequence"`
-	TerminalOutcome  RuntimeCapabilityTerminalOutcome `json:"terminal_outcome"`
+	// SchemaVersion selects the admitted serialization schema.
+	SchemaVersion int `json:"schema_version"`
+	// TerminalSequence orders terminal capability records without reconstructing authority.
+	TerminalSequence uint64 `json:"terminal_sequence"`
+	// TerminalOutcome records the terminal result rather than granting further use.
+	TerminalOutcome RuntimeCapabilityTerminalOutcome `json:"terminal_outcome"`
 }
 
 // RuntimeAcquisitionRestartState is the bounded source restart metadata.
 type RuntimeAcquisitionRestartState struct {
-	SchemaVersion        int                          `json:"schema_version"`
-	NextTerminalSequence uint64                       `json:"next_terminal_sequence"`
-	SequenceExhausted    bool                         `json:"sequence_exhausted"`
-	Tombstones           []RuntimeCapabilityTombstone `json:"tombstones"`
+	// SchemaVersion selects the admitted serialization schema.
+	SchemaVersion int `json:"schema_version"`
+	// NextTerminalSequence is the next owner-assigned terminal audit sequence.
+	NextTerminalSequence uint64 `json:"next_terminal_sequence"`
+	// SequenceExhausted records that no further terminal sequence may be allocated.
+	SequenceExhausted bool `json:"sequence_exhausted"`
+	// Tombstones retains bounded terminal audit records, not reusable capability tokens.
+	Tombstones []RuntimeCapabilityTombstone `json:"tombstones"`
 }
 
 // RuntimeAcquisitionSnapshot reports bounded public resource state only.
 type RuntimeAcquisitionSnapshot struct {
-	LiveCapabilities     int
-	ActiveAttempts       int
+	// LiveCapabilities counts currently retained live capability records.
+	LiveCapabilities int
+	// ActiveAttempts counts currently retained acquisition attempts.
+	ActiveAttempts int
+	// NextTerminalSequence is the next owner-assigned terminal audit sequence.
 	NextTerminalSequence uint64
-	SequenceExhausted    bool
-	Tombstones           []RuntimeCapabilityTombstone
+	// SequenceExhausted records that no further terminal sequence may be allocated.
+	SequenceExhausted bool
+	// Tombstones retains bounded terminal audit records, not reusable capability tokens.
+	Tombstones []RuntimeCapabilityTombstone
 }
 
 type runtimeAttemptPhase uint8
@@ -189,37 +224,63 @@ type RuntimeAcquisitionCapability struct {
 // RuntimeCapabilityClaimResult distinguishes the one CAS winner from later
 // immutable observations of the same terminal state.
 type RuntimeCapabilityClaimResult struct {
-	Won     bool
+	// Won reports whether this caller performed the single successful terminal transition.
+	Won bool
+	// Outcome reports the immutable terminal capability state observed by this caller.
 	Outcome RuntimeCapabilityTerminalOutcome
 }
 
 // RuntimeAcquisitionProvenance is the lossless successful logical-view source
 // record. Slice fields are copied on every return.
 type RuntimeAcquisitionProvenance struct {
-	SourceKind          RuntimeAcquisitionSourceKind
-	SourceEvidenceID    string
-	LogicalViewID       uint64
-	WireResponseID      uint64
-	PhysicalRequestID   uint64
-	Endpoint            string
-	ConnectionID        uint64
-	Transport           TransportFamily
+	// SourceKind distinguishes runtime evidence from offline fixtures; it is not qualification.
+	SourceKind RuntimeAcquisitionSourceKind
+	// SourceEvidenceID binds the documentary record to its source evidence identity.
+	SourceEvidenceID string
+	// LogicalViewID identifies the caller's logical read within a physical exchange.
+	LogicalViewID uint64
+	// WireResponseID identifies a request-correlated response; zero means no such identity.
+	WireResponseID uint64
+	// PhysicalRequestID identifies the shared physical exchange underlying logical views.
+	PhysicalRequestID uint64
+	// Endpoint identifies the configured transport owner; it carries no vendor meaning.
+	Endpoint string
+	// ConnectionID identifies the socket within its owning endpoint.
+	ConnectionID uint64
+	// Transport identifies the transport family used for this evidence.
+	Transport TransportFamily
+	// TransportGeneration binds the record to one transport lifecycle, preventing stale correlation.
 	TransportGeneration uint64
-	UnitID              byte
-	RequestedFunction   FunctionCode
-	ReceivedFunction    FunctionCode
-	Table               LogicalTable
-	PhysicalOffset      uint16
-	PhysicalWordCount   uint16
-	AuthorizationScope  string
-	PollGeneration      uint64
-	DeadlineIdentity    uint64
-	LogicalOffset       uint16
-	LogicalWordCount    uint16
-	SliceOffset         uint16
-	SliceWordCount      uint16
-	Words               []uint16
-	WireResponseBytes   []byte
+	// UnitID retains the addressed unit byte for correlation and admission.
+	UnitID byte
+	// RequestedFunction retains the function bound to the originating request.
+	RequestedFunction FunctionCode
+	// ReceivedFunction retains the received function byte, including its exception bit.
+	ReceivedFunction FunctionCode
+	// Table distinguishes holding-register reads from input-register reads.
+	Table LogicalTable
+	// PhysicalOffset is the zero-based start of the physical register read, in words.
+	PhysicalOffset uint16
+	// PhysicalWordCount is the number of words in the physical read.
+	PhysicalWordCount uint16
+	// AuthorizationScope is the caller's isolation key; it does not itself grant operation authority.
+	AuthorizationScope string
+	// PollGeneration separates reads belonging to different caller polling cycles.
+	PollGeneration uint64
+	// DeadlineIdentity separates caller deadline domains even when register ranges coincide.
+	DeadlineIdentity uint64
+	// LogicalOffset is the zero-based start of the logical register view, in words.
+	LogicalOffset uint16
+	// LogicalWordCount is the number of words in the logical view.
+	LogicalWordCount uint16
+	// SliceOffset is the word index of the logical view within the physical response.
+	SliceOffset uint16
+	// SliceWordCount is the number of physical-response words retained for the logical view.
+	SliceWordCount uint16
+	// Words contains uninterpreted 16-bit registers in wire order.
+	Words []uint16
+	// WireResponseBytes retains exact physical response bytes without semantic decoding.
+	WireResponseBytes []byte
 }
 
 // RuntimeAcquisition combines documentary provenance with an opaque claim.

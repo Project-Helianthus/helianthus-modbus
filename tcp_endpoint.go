@@ -9,15 +9,26 @@ import (
 
 // TCPEndpointConfig declares every bounded resource owned by one endpoint.
 type TCPEndpointConfig struct {
-	Endpoint                 string
-	PoolLimits               EndpointPoolLimits
-	SchedulerLimits          SchedulerLimits
-	Backoff                  BackoffConfig
-	MaxBufferedBytes         int
-	MaxRequestDeadline       time.Duration
-	MaxResponseDeadline      time.Duration
-	Clock                    TCPMonotonicClock
-	EventSink                TCPTransportEventSink
+	// Endpoint identifies the configured transport owner; it carries no vendor meaning.
+	Endpoint string
+	// PoolLimits bounds endpoint-owned connections and per-connection correlation state.
+	PoolLimits EndpointPoolLimits
+	// SchedulerLimits bounds queues, admission keys, dependents, and retry state.
+	SchedulerLimits SchedulerLimits
+	// Backoff supplies bounded reconnect progression and replayable jitter identity.
+	Backoff BackoffConfig
+	// MaxBufferedBytes caps retained stream-decoder bytes per connection.
+	MaxBufferedBytes int
+	// MaxRequestDeadline caps the positive timeout accepted for one endpoint operation.
+	MaxRequestDeadline time.Duration
+	// MaxResponseDeadline caps a response wait and must not exceed MaxRequestDeadline.
+	MaxResponseDeadline time.Duration
+	// Clock supplies the owner's monotonic time domain.
+	Clock TCPMonotonicClock
+	// EventSink receives ordered diagnostic transitions; implementations must return promptly.
+	EventSink TCPTransportEventSink
+	// RuntimeAcquisitionSource optionally observes successful logical views through a bounded
+	// source owner.
 	RuntimeAcquisitionSource *RuntimeAcquisitionSource
 	// Framing selects the MBAP framing policy for every connection. The zero
 	// value is TCPFramingStrict. TCPFramingTolerant requires MaxBufferedBytes
@@ -27,31 +38,48 @@ type TCPEndpointConfig struct {
 
 // TCPLogicalRead is one logical FC03/FC04 view in a physical read plan.
 type TCPLogicalRead struct {
+	// LogicalViewID identifies the caller's logical read within a physical exchange.
 	LogicalViewID uint64
-	Request       ReadRegistersRequest
+	// Request retains the validated request used for correlation and decoding.
+	Request ReadRegistersRequest
 }
 
 // TCPReadPlan is one bounded, scheduler-owned endpoint operation.
 type TCPReadPlan struct {
-	Connection         TCPConnectionHandle
-	UnitID             byte
+	// Connection binds this plan to one endpoint-owned live connection handle.
+	Connection TCPConnectionHandle
+	// UnitID retains the addressed unit byte for correlation and admission.
+	UnitID byte
+	// AuthorizationScope is the caller's isolation key; it does not itself grant operation authority.
 	AuthorizationScope string
-	PollGeneration     uint64
-	DeadlineIdentity   uint64
-	Timeout            time.Duration
-	Reads              []TCPLogicalRead
+	// PollGeneration separates reads belonging to different caller polling cycles.
+	PollGeneration uint64
+	// DeadlineIdentity separates caller deadline domains even when register ranges coincide.
+	DeadlineIdentity uint64
+	// Timeout bounds the operation with a positive duration on the owner's monotonic clock.
+	Timeout time.Duration
+	// Reads lists logical FC03/FC04 views to validate and coalesce within this operation.
+	Reads []TCPLogicalRead
 }
 
 // TCPDeviceIDPlan is one bounded, scheduler-owned FC2B/MEI0E traversal.
 type TCPDeviceIDPlan struct {
-	Connection         TCPConnectionHandle
-	UnitID             byte
+	// Connection binds this plan to one endpoint-owned live connection handle.
+	Connection TCPConnectionHandle
+	// UnitID retains the addressed unit byte for correlation and admission.
+	UnitID byte
+	// AuthorizationScope is the caller's isolation key; it does not itself grant operation authority.
 	AuthorizationScope string
-	PollGeneration     uint64
-	DeadlineIdentity   uint64
-	Timeout            time.Duration
-	Request            DeviceIDRequest
-	Limits             DeviceIDLimits
+	// PollGeneration separates reads belonging to different caller polling cycles.
+	PollGeneration uint64
+	// DeadlineIdentity separates caller deadline domains even when register ranges coincide.
+	DeadlineIdentity uint64
+	// Timeout bounds the operation with a positive duration on the owner's monotonic clock.
+	Timeout time.Duration
+	// Request retains the validated request used for correlation and decoding.
+	Request DeviceIDRequest
+	// Limits supplies the finite bounds validated before allocating owner state.
+	Limits DeviceIDLimits
 	// Decoding selects strict (the zero value) or tolerant page decoding.
 	Decoding DeviceIDDecoding
 }
@@ -108,47 +136,76 @@ func (dispatch TCPDispatch) RequestID() uint64 {
 // empty and publishes Tolerant, which keeps every page byte and names every
 // deviation.
 type TCPDeviceIDCompletion struct {
+	// RequestID identifies the operation within its owning endpoint.
 	RequestID uint64
-	Result    DeviceIDResult
-	Decoding  DeviceIDDecoding
-	Tolerant  DeviceIDTolerantResult
+	// Result holds a fully validated strict traversal; tolerant decoding leaves it empty.
+	Result DeviceIDResult
+	// Decoding selects strict aggregation or tolerant evidence-preserving decoding.
+	Decoding DeviceIDDecoding
+	// Tolerant holds tolerant traversal evidence while the strict Result remains empty.
+	Tolerant DeviceIDTolerantResult
 }
 
 // TCPReadBatch retains every frame and successful result from one socket read.
 type TCPReadBatch struct {
+	// Responses retains every classified frame from the read, even when other frames fail.
 	Responses []WireResponse
-	Views     []LogicalReadView
+	// Views contains successful logical register views derived from correlated responses.
+	Views []LogicalReadView
+	// DeviceIDs contains completed device-identification traversals.
 	DeviceIDs []TCPDeviceIDCompletion
 }
 
 // TCPEndpointResources reports current bounded endpoint resource use.
 type TCPEndpointResources struct {
-	ActiveConnections    int
-	MaxConnections       int
-	QueuedRequests       int
-	InFlightRequests     int
-	MaxInFlightRequests  int
-	ActiveAdmissionKeys  int
-	MaxAdmissionKeys     int
-	CoalescedDependents  int
-	MaxCoalescedPerKey   int
-	LiveRequests         int
-	WaitingResponses     int
-	RetainedRetries      int
+	// ActiveConnections counts currently retained endpoint connections.
+	ActiveConnections int
+	// MaxConnections caps simultaneously owned connections.
+	MaxConnections int
+	// QueuedRequests counts requests currently awaiting queue service.
+	QueuedRequests int
+	// InFlightRequests counts requests admitted to active service.
+	InFlightRequests int
+	// MaxInFlightRequests caps simultaneously active scheduler requests.
+	MaxInFlightRequests int
+	// ActiveAdmissionKeys counts currently retained authorization-scope and unit partitions.
+	ActiveAdmissionKeys int
+	// MaxAdmissionKeys caps retained admission partitions.
+	MaxAdmissionKeys int
+	// CoalescedDependents counts logical dependents retained by coalescing state.
+	CoalescedDependents int
+	// MaxCoalescedPerKey caps coalesced dependents per admission partition.
+	MaxCoalescedPerKey int
+	// LiveRequests counts retained endpoint request records.
+	LiveRequests int
+	// WaitingResponses counts requests currently waiting for a response.
+	WaitingResponses int
+	// RetainedRetries counts retained handles available for explicit retry decisions.
+	RetainedRetries int
+	// RetiredResponseState counts retired physical exchanges retained for response handling.
 	RetiredResponseState int
 }
 
 // TCPEndpointSnapshot is the read-only operational state for one runtime root.
 type TCPEndpointSnapshot struct {
-	Endpoint          string
-	Healthy           bool
-	Closed            bool
-	DisableReason     string
+	// Endpoint identifies the configured transport owner; it carries no vendor meaning.
+	Endpoint string
+	// Healthy requires an open endpoint, no reconnect requirement, and at least one active connection.
+	Healthy bool
+	// Closed reports terminal endpoint shutdown.
+	Closed bool
+	// DisableReason records why the endpoint stopped admitting work.
+	DisableReason string
+	// ReconnectRequired reports that socket recovery is required before further service.
 	ReconnectRequired bool
-	ReconnectReady    bool
-	ReconnectWaiting  bool
-	Resources         TCPEndpointResources
-	Metrics           TCPEndpointMetrics
+	// ReconnectReady reports that the reconnect delay has elapsed.
+	ReconnectReady bool
+	// ReconnectWaiting reports a reconnect delay currently in progress.
+	ReconnectWaiting bool
+	// Resources reports current bounded resource use.
+	Resources TCPEndpointResources
+	// Metrics reports cumulative transport and scheduling observations.
+	Metrics TCPEndpointMetrics
 }
 
 type endpointRequestPhase byte

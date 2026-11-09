@@ -48,83 +48,89 @@ EXPECTED_POLICY = {
     ],
     "allowed_product_go_sha256": {
         "device_id.go": (
-            "2897dee6ab1917b0267de94aefc2d018c9ba803ec3f42a11143fc914caa865e5"
+            "ba30fd0cc2c6957f439e4d0acea5563522ff544a960cbb2785e0779a83360774"
         ),
         "doc.go": (
-            "a8f1e9ea1e8f13e40af5ebeba95d07d11d593969afe814a3fe64d3f8dcb1f365"
+            "eda8957599a7c09e63fc561c4f18df1b94745fe56e47f365d8c643f67c6dabc1"
         ),
         "private_function.go": (
             "d514d4065fbbe3a8fc5f0f83f7f623e59a045c07526a610a4e96249ae1892919"
         ),
         "pdu.go": (
-            "6e10a628f3f79d5c19c7c51307308179644364a5ba2c698e39e4ec49ef4e1d8b"
+            "b40f22702a31d72e99af0a113525813e71782db96bd7968c413fd63b7b10fc44"
         ),
         "rtu_adu.go": (
             "2aede649a154c135a1da2c3b78f9a6fad2c6c814db6fb56c31efdbdb61b79001"
         ),
         "rtu_capability.go": (
-            "33f8427bccd92b337afe1c8947ed2809f0262db7e3a9697629ef593a6ab2b010"
+            "b27ca42ed0afbc37a1a6a4df4dfae88ac513a2065a39a222426e7127617c7a9b"
         ),
         "rtu_endpoint.go": (
-            "5ec493f52dc4d7058589542fb532232036d235182e5f19530732ecad2b51bb61"
+            "01697f4ec36f6d556f30dc95a18189397c408cd7d5cbffb0e2876dc8445737b3"
         ),
-        "rtu_production.go": "d50e4719c2a6a876750cef8367ec4463b7ebbe8293908b271592db743d8395b4",
-        "rtu_production_private.go": "a31fdf68d28e6b4ad5d49ac63ffebb423c872d7c47367b54d868e4107d219f87",
-        "rtu_serial.go": "8bc0a0b696f4b5f3bbd5f20cfa66afffb16ba1e3ec8356de05470f43bb49ad61",
-        "rtu_serial_linux.go": "432bbffbfc3e74e0b474d99784a446af3fe5540fd33e7d2e8a725c550801adda",
+        "rtu_production.go": "413f439807fc579a908adcb69d0bbe192aae21ba872c087fcb2759b12bb04bca",
+        "rtu_production_private.go": "959b6cb6ebf2493dd3e85b6cb0dd4954adb973d4b06a74220797f72db99d3660",
+        "rtu_serial.go": "eac149dac75658e6f3a9816fbdd17f2e426b54510e355d3c4e032e1176cd878b",
+        "rtu_serial_linux.go": "f825932f6683a473f5c7177c687e5510746aae30778b595448edc8c617321f0a",
         "rtu_serial_stub.go": "98a471cd37831225e9c34bd8bf315fdad831637282265df3e75db69aab9b1649",
         "rtu_session.go": (
-            "1621aba290efc6f701d660a00173f22a258fd63f5679748f0547fea50e469f74"
+            "0a88a60fd804e7a3d74355323cd7d9899b162ce379991f619a89ce3a4cc38f17"
         ),
         "rtu_timing.go": (
-            "74a69ceafb02ff20db5b733733a783d57b87d501db6d2c8cd8ade6cebb005e49"
+            "0cfc690a288ca75d5e418e0eac76d2609921d13e4a266068c77cd857a1fb1a60"
         ),
         "runtime_acquisition.go": (
-            "efa2aa5125d203dbf2bcd95330a279ee32e10ef6cb0f74d9fe030ec666112c0e"
+            "15051f8d13408854995b9fd96f4c629d5fbcf5fe8d5975514dd04ef376be3d3b"
         ),
         "runtime_normalization.go": (
-            "0e45d3ae333556b8cd7633151e324752c994e9a427875a0c4e611510e7313b9d"
+            "8ac474df1245b79eeb88eefc5a2e23d09d752e3b77f51c3c9b698d1edb39da38"
         ),
         "tcp_adu.go": (
-            "1b2a670759be0865b59060efd7bc90a43f7a67607c3c7e3767e0227c4fcca88c"
+            "5fe703c370733eb8f0389b2e1261a9cd140eb5de9e061ec2a965cc72cca4fcea"
         ),
         "tcp_coalescing.go": (
-            "2cb7178b709156261ef4e704f127d7524ca3e9f3ec33f18856f0415a2f9a15b7"
+            "af5054f6334b96dd8fa62d5f078318a665e3916d46cb4aea393f57fdc2d40a31"
         ),
         "tcp_endpoint.go": (
-            "ef390c3571c2ed8e439782a3786eac43267e7a1bd64d965e3ef5765c22ef33c0"
+            "1edb614f14dcc7cfe76b7f57547ffa125a8616acf95be8350bd2618dbb9498e8"
         ),
         "tcp_endpoint_lifecycle.go": (
-            "c4e87eec337419bad97494283cafde8df5f98c344bf77766b96b5d6bfe5c36e8"
+            "55bbc6e32f931f966c47b19b614fea1efd338c22b578d3834e182774528857c5"
         ),
         "tcp_endpoint_read.go": (
-            "8bb475db4601194839d804e3ae4da9bc0941f7004b36a064c3eb861b2f415c24"
+            "9601cc73e9b3d9831190ffc203f02e3b9af344faf1d7687d2ae6c2d97d723dc5"
         ),
         "tcp_endpoint_response.go": (
-            "40ac04f81e2e31244f3e62fadf487f31e103511b4343478a82cd1b8adbde34a4"
+            "5c2acfd663e3bc479e80efd20427a952b04a80362a717acb4d79ea1d0b9c4cd5"
         ),
         "tcp_endpoint_retry.go": (
-            "5b3ca071626f039bbd12439eccefeddb931f093ea28a6a5bf821586dddb2fe6c"
+            "7b88977f3ddf7470b807199ecc7498b97487dacba12e14e28a6ddc30ba50b930"
         ),
         "tcp_endpoint_write.go": (
-            "cf7f1075f2ef2932883f50937441002cf428b4907beda503eb53d40af9289998"
+            "9c86a54747b369fb6e38da3b58e3b6ae8dd996991599d72dd8976706a29f61cd"
         ),
         "tcp_owner.go": (
-            "919029df866f3db1157742c84bdeb689ea4b898d639d2ea993ec5b896bdc608b"
+            "5e9c353db9a853be82e8bd7ef376e031e33e53d10397041bebc6f136b8e51e24"
         ),
         "tcp_pool.go": (
-            "bdbc8f871915f1173d67a211dcff8572516e071cdb3d1793a463f5598c8e7114"
+            "0ff5b4048c2c0e9804acaacdd548669add425c129d325e6ddeb95e19f6603818"
         ),
         "tcp_scheduler.go": (
-            "5429a20ac9ab2410224c79f47cdfeac712e3f613844f476a13ce8a5ab21e27a9"
+            "b76228b8630e2704820806239082318cce8a0056471e4f11769ac8492a83dc0a"
         ),
         "tcp_transport.go": (
-            "935104fd4086a016241fa8358be885aa99c55f80d220a03255e42b31e1c4fca4"
+            "f70990b894007534164f46abb508ccc0b2d34bbd7f6c548baa9af0a12a8fcdfb"
         ),
     },
     "trusted_go_tool_sha256": {
+        "scripts/acceptance_evidence/doc.go": (
+            "782265598efd135fec2ca6b2bbd3c3dccae77383e51992f15b9d134b4cf989d3"
+        ),
         "scripts/acceptance_evidence/main.go": (
             "903cfc5df5569c316186032ab2da644dcb664a51548b064e3d3e67c945b96880"
+        ),
+        "scripts/read_only_surface/doc.go": (
+            "347a388e7438cd5234423bab6d561960b87e50f870cd1651a06905b506a9a877"
         ),
         "scripts/read_only_surface/main.go": (
             "0e6d6412ddb399210b14ee45b9e6bcdce25f81b61ae2aba203c7e1527fac9b0f"
@@ -184,7 +190,9 @@ class PolicyError(RuntimeError):
 
 
 TRUSTED_GO_TOOL_FILES = {
+    "scripts/acceptance_evidence/doc.go",
     "scripts/acceptance_evidence/main.go",
+    "scripts/read_only_surface/doc.go",
     "scripts/read_only_surface/main.go",
 }
 TRUSTED_PYTHON_TOOL_FILES = {

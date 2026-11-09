@@ -23,7 +23,9 @@ func IsRTUFrameDiscarded(err error) bool {
 
 // RTUMonotonicClock supplies deterministic offsets to the fixture owner.
 type RTUMonotonicClock interface {
+	// ContractVersion identifies the monotonic clock contract used to interpret offsets.
 	ContractVersion() string
+	// Now returns a nonnegative, nondecreasing monotonic offset as a duration.
 	Now() time.Duration
 }
 
@@ -31,53 +33,93 @@ type RTUMonotonicClock interface {
 type RTUEventKind string
 
 const (
-	RTUEventBeginRead            RTUEventKind = "begin_read"
-	RTUEventBeginDeviceID        RTUEventKind = "begin_device_id"
-	RTUEventTransmitResult       RTUEventKind = "transmit_result"
-	RTUEventResponseReceive      RTUEventKind = "response_receive"
+	// RTUEventBeginRead records fixture admission of a typed register read.
+	RTUEventBeginRead RTUEventKind = "begin_read"
+	// RTUEventBeginDeviceID records fixture admission of device identification.
+	RTUEventBeginDeviceID RTUEventKind = "begin_device_id"
+	// RTUEventTransmitResult records transmission certainty for recovery decisions.
+	RTUEventTransmitResult RTUEventKind = "transmit_result"
+	// RTUEventResponseReceive records receipt and classification of response bytes.
+	RTUEventResponseReceive RTUEventKind = "response_receive"
+	// RTUEventQuarantineTransition records entry into uncertainty isolation.
 	RTUEventQuarantineTransition RTUEventKind = "quarantine_transition"
-	RTUEventWaiterResolved       RTUEventKind = "waiter_resolved"
-	RTUEventFrameDiscarded       RTUEventKind = "frame_discarded"
-	RTUEventResynchronized       RTUEventKind = "resynchronized"
-	RTUEventRecoveryRequired     RTUEventKind = "recovery_required"
-	RTUEventRecovered            RTUEventKind = "recovered"
-	RTUEventClosed               RTUEventKind = "closed"
+	// RTUEventWaiterResolved records terminal resolution of a fixture waiter.
+	RTUEventWaiterResolved RTUEventKind = "waiter_resolved"
+	// RTUEventFrameDiscarded records a frame consumed during quarantine.
+	RTUEventFrameDiscarded RTUEventKind = "frame_discarded"
+	// RTUEventResynchronized records recovery of fixture framing alignment.
+	RTUEventResynchronized RTUEventKind = "resynchronized"
+	// RTUEventRecoveryRequired records that bounded recovery must precede further sends.
+	RTUEventRecoveryRequired RTUEventKind = "recovery_required"
+	// RTUEventRecovered records successful fixture recovery into a new generation.
+	RTUEventRecovered RTUEventKind = "recovered"
+	// RTUEventClosed records terminal fixture shutdown.
+	RTUEventClosed RTUEventKind = "closed"
 )
 
 // RTUEvent is one replayable owner-assigned fixture transition.
 type RTUEvent struct {
+	// ClockContractVersion identifies the offset and timer contract needed for replay.
 	ClockContractVersion string
-	Endpoint             string
-	Kind                 RTUEventKind
-	MonotonicOffset      time.Duration
-	Sequence             uint64
-	Generation           uint64
-	RequestID            uint64
-	UnitID               byte
-	RequestedFunction    FunctionCode
-	ReceivedFunction     FunctionCode
-	Table                LogicalTable
-	Offset               uint16
-	Quantity             uint16
-	AuthorizationScope   string
-	PollGeneration       uint64
-	DeadlineIdentity     uint64
-	DeadlineOffset       time.Duration
-	LogicalViewID        uint64
-	DeviceIDAccess       DeviceIDAccess
-	DeviceIDObjectID     byte
-	RequestADUHex        string
-	ResponseADUHex       string
-	WireResponseID       uint64
-	DiagnosticFrameID    uint64
-	WireOutcome          WireOutcome
-	State                RTUEndpointState
-	TransmitResult       TransmitResult
-	Detail               string
+	// Endpoint identifies the configured transport owner; it carries no vendor meaning.
+	Endpoint string
+	// Kind classifies this record for diagnostics.
+	Kind RTUEventKind
+	// MonotonicOffset is elapsed time on the owner's monotonic clock, expressed as a duration.
+	MonotonicOffset time.Duration
+	// Sequence orders events with equal monotonic offsets within the owner.
+	Sequence uint64
+	// Generation identifies the endpoint lifecycle that admitted the exchange.
+	Generation uint64
+	// RequestID identifies the operation within its owning endpoint.
+	RequestID uint64
+	// UnitID retains the addressed unit byte for correlation and admission.
+	UnitID byte
+	// RequestedFunction retains the function bound to the originating request.
+	RequestedFunction FunctionCode
+	// ReceivedFunction retains the received function byte, including its exception bit.
+	ReceivedFunction FunctionCode
+	// Table distinguishes holding-register reads from input-register reads.
+	Table LogicalTable
+	// Offset is the zero-based starting register address, in words.
+	Offset uint16
+	// Quantity is the number of consecutive 16-bit registers requested.
+	Quantity uint16
+	// AuthorizationScope is the caller's isolation key; it does not itself grant operation authority.
+	AuthorizationScope string
+	// PollGeneration separates reads belonging to different caller polling cycles.
+	PollGeneration uint64
+	// DeadlineIdentity separates caller deadline domains even when register ranges coincide.
+	DeadlineIdentity uint64
+	// DeadlineOffset is an absolute monotonic deadline in nanoseconds on the owner's clock.
+	DeadlineOffset time.Duration
+	// LogicalViewID identifies the caller's logical read within a physical exchange.
+	LogicalViewID uint64
+	// DeviceIDAccess retains the requested FC2B/MEI0E access code.
+	DeviceIDAccess DeviceIDAccess
+	// DeviceIDObjectID retains the requested device-identification object cursor.
+	DeviceIDObjectID byte
+	// RequestADUHex encodes exact outgoing frame bytes for replay.
+	RequestADUHex string
+	// ResponseADUHex encodes exact received frame bytes for replay.
+	ResponseADUHex string
+	// WireResponseID identifies a request-correlated response; zero means no such identity.
+	WireResponseID uint64
+	// DiagnosticFrameID identifies an uncorrelated frame without attributing it to a request.
+	DiagnosticFrameID uint64
+	// WireOutcome classifies the received frame's correlation and protocol outcome.
+	WireOutcome WireOutcome
+	// State records the fixture owner's lifecycle phase after the transition.
+	State RTUEndpointState
+	// TransmitResult records transmission certainty used to decide recovery and retry safety.
+	TransmitResult TransmitResult
+	// Detail retains the transition's diagnostic reason without adding protocol semantics.
+	Detail string
 }
 
 // RTUEventSink consumes serialized fixture events.
 type RTUEventSink interface {
+	// RecordRTUEvent consumes one serialized fixture transition; callbacks must return promptly.
 	RecordRTUEvent(RTUEvent)
 }
 
@@ -85,13 +127,20 @@ type RTUEventSink interface {
 type RTUEndpointState string
 
 const (
-	RTUStateIdle             RTUEndpointState = "idle"
-	RTUStateWriting          RTUEndpointState = "writing"
-	RTUStateResponseWait     RTUEndpointState = "response_wait"
-	RTUStateInterFrameGuard  RTUEndpointState = "inter_frame_guard"
-	RTUStateQuarantine       RTUEndpointState = "quarantine"
+	// RTUStateIdle permits a new fixture operation.
+	RTUStateIdle RTUEndpointState = "idle"
+	// RTUStateWriting marks a fixture request whose transmission is in progress.
+	RTUStateWriting RTUEndpointState = "writing"
+	// RTUStateResponseWait marks a fully transmitted fixture request awaiting a response.
+	RTUStateResponseWait RTUEndpointState = "response_wait"
+	// RTUStateInterFrameGuard blocks the next frame until the required silence interval ends.
+	RTUStateInterFrameGuard RTUEndpointState = "inter_frame_guard"
+	// RTUStateQuarantine isolates uncertain or abandoned traffic from new requests.
+	RTUStateQuarantine RTUEndpointState = "quarantine"
+	// RTUStateRecoveryRequired blocks new work until explicit fixture recovery succeeds.
 	RTUStateRecoveryRequired RTUEndpointState = "recovery_required"
-	RTUStateClosed           RTUEndpointState = "closed"
+	// RTUStateClosed marks terminal fixture shutdown.
+	RTUStateClosed RTUEndpointState = "closed"
 )
 
 // RTUFixtureLine is an in-memory identity with one endpoint owner.
@@ -117,34 +166,55 @@ func NewRTUFixtureLine(identity string) (*RTUFixtureLine, error) {
 
 // RTUFixtureEndpointConfig configures only the offline fixture runtime.
 type RTUFixtureEndpointConfig struct {
-	Endpoint           string
-	Line               *RTUFixtureLine
-	Timing             RTUTiming
-	Clock              RTUMonotonicClock
-	EventSink          RTUEventSink
-	FixtureOptIn       bool
+	// Endpoint identifies the configured transport owner; it carries no vendor meaning.
+	Endpoint string
+	// Line is the in-memory fixture identity exclusively owned by this endpoint.
+	Line *RTUFixtureLine
+	// Timing supplies validated character, frame, and finite recovery intervals.
+	Timing RTUTiming
+	// Clock supplies the owner's monotonic time domain.
+	Clock RTUMonotonicClock
+	// EventSink receives ordered diagnostic transitions; implementations must return promptly.
+	EventSink RTUEventSink
+	// FixtureOptIn must explicitly permit offline fixture execution; it confers no hardware
+	// qualification.
+	FixtureOptIn bool
+	// MaxDiscardedFrames bounds quarantine discard work before recovery is required.
 	MaxDiscardedFrames uint64
 }
 
 // RTUReadPlan is one typed read admitted to the fixture owner.
 type RTUReadPlan struct {
-	UnitID             byte
+	// UnitID retains the addressed unit byte for correlation and admission.
+	UnitID byte
+	// AuthorizationScope is the caller's isolation key; it does not itself grant operation authority.
 	AuthorizationScope string
-	PollGeneration     uint64
-	DeadlineIdentity   uint64
-	LogicalViewID      uint64
-	Timeout            time.Duration
-	Request            ReadRegistersRequest
+	// PollGeneration separates reads belonging to different caller polling cycles.
+	PollGeneration uint64
+	// DeadlineIdentity separates caller deadline domains even when register ranges coincide.
+	DeadlineIdentity uint64
+	// LogicalViewID identifies the caller's logical read within a physical exchange.
+	LogicalViewID uint64
+	// Timeout bounds the operation with a positive duration on the owner's monotonic clock.
+	Timeout time.Duration
+	// Request retains the validated request used for correlation and decoding.
+	Request ReadRegistersRequest
 }
 
 // RTUDeviceIDPlan is one typed Device Identification request for the fixture.
 type RTUDeviceIDPlan struct {
-	UnitID             byte
+	// UnitID retains the addressed unit byte for correlation and admission.
+	UnitID byte
+	// AuthorizationScope is the caller's isolation key; it does not itself grant operation authority.
 	AuthorizationScope string
-	PollGeneration     uint64
-	DeadlineIdentity   uint64
-	Timeout            time.Duration
-	Request            DeviceIDRequest
+	// PollGeneration separates reads belonging to different caller polling cycles.
+	PollGeneration uint64
+	// DeadlineIdentity separates caller deadline domains even when register ranges coincide.
+	DeadlineIdentity uint64
+	// Timeout bounds the operation with a positive duration on the owner's monotonic clock.
+	Timeout time.Duration
+	// Request retains the validated request used for correlation and decoding.
+	Request DeviceIDRequest
 }
 
 // RTURequestHandle identifies one generation-scoped fixture request.

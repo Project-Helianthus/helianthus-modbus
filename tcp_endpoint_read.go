@@ -6,6 +6,9 @@ import (
 	"time"
 )
 
+// EnqueueRead validates and admits a bounded set of logical reads without sending bytes. It
+// serializes admission and rejects stale connections, invalid identities, exhausted resources,
+// and event-sink reentry.
 func (endpoint *TCPEndpoint) EnqueueRead(
 	plan TCPReadPlan,
 ) (TCPRequestHandle, error) {

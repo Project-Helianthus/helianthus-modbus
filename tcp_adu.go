@@ -49,10 +49,13 @@ func tcpFramingADUBound(framing TCPFraming) int {
 // did not deliver as a frame, in stream order, so the evidence survives the
 // connection renewal that follows.
 type TCPFrameError struct {
+	// Cause retains the underlying error for diagnostics.
 	Cause *ProtocolError
-	Raw   []byte
+	// Raw retains frame bytes associated with the framing failure.
+	Raw []byte
 }
 
+// Error formats the retained framing cause.
 func (err *TCPFrameError) Error() string {
 	if err == nil {
 		return "<nil>"

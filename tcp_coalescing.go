@@ -20,15 +20,24 @@ const (
 
 // ReadIntentSpec contains every V1 read-coalescing identity field.
 type ReadIntentSpec struct {
-	LogicalViewID       uint64
-	Endpoint            string
-	Transport           TransportFamily
+	// LogicalViewID identifies the caller's logical read within a physical exchange.
+	LogicalViewID uint64
+	// Endpoint identifies the configured transport owner; it carries no vendor meaning.
+	Endpoint string
+	// Transport identifies the transport family used for this evidence.
+	Transport TransportFamily
+	// TransportGeneration binds the record to one transport lifecycle, preventing stale correlation.
 	TransportGeneration uint64
-	UnitID              byte
-	AuthorizationScope  string
-	PollGeneration      uint64
-	DeadlineIdentity    uint64
-	Request             ReadRegistersRequest
+	// UnitID retains the addressed unit byte for correlation and admission.
+	UnitID byte
+	// AuthorizationScope is the caller's isolation key; it does not itself grant operation authority.
+	AuthorizationScope string
+	// PollGeneration separates reads belonging to different caller polling cycles.
+	PollGeneration uint64
+	// DeadlineIdentity separates caller deadline domains even when register ranges coincide.
+	DeadlineIdentity uint64
+	// Request retains the validated request used for correlation and decoding.
+	Request ReadRegistersRequest
 }
 
 // ReadIntent is an immutable validated logical read candidate.
@@ -80,11 +89,16 @@ const (
 type DependentTerminalState string
 
 const (
-	DependentQueued    DependentTerminalState = "queued"
-	DependentAttached  DependentTerminalState = "attached"
+	// DependentQueued marks a logical read awaiting attachment to a physical exchange.
+	DependentQueued DependentTerminalState = "queued"
+	// DependentAttached marks a logical read bound to a physical exchange.
+	DependentAttached DependentTerminalState = "attached"
+	// DependentCancelled marks a cancelled logical waiter without cancelling its siblings.
 	DependentCancelled DependentTerminalState = "cancelled"
+	// DependentDelivered marks a logical waiter satisfied by a validated response slice.
 	DependentDelivered DependentTerminalState = "delivered"
-	DependentFailed    DependentTerminalState = "failed"
+	// DependentFailed marks a logical waiter terminalized without successful data.
+	DependentFailed DependentTerminalState = "failed"
 )
 
 // CoalescedSlice identifies one exact logical slice in a physical response.
@@ -800,15 +814,24 @@ type LogicalReadView struct {
 
 // LogicalViewProvenance is the self-contained physical/logical source record.
 type LogicalViewProvenance struct {
-	PhysicalRequestID  uint64
-	Wire               WireProvenance
+	// PhysicalRequestID identifies the shared physical exchange underlying logical views.
+	PhysicalRequestID uint64
+	// Wire retains the physical response identity from which this logical view was sliced.
+	Wire WireProvenance
+	// AuthorizationScope is the caller's isolation key; it does not itself grant operation authority.
 	AuthorizationScope string
-	PollGeneration     uint64
-	DeadlineIdentity   uint64
-	LogicalOffset      uint16
-	LogicalWordCount   uint16
-	SliceOffset        uint16
-	SliceWordCount     uint16
+	// PollGeneration separates reads belonging to different caller polling cycles.
+	PollGeneration uint64
+	// DeadlineIdentity separates caller deadline domains even when register ranges coincide.
+	DeadlineIdentity uint64
+	// LogicalOffset is the zero-based start of the logical register view, in words.
+	LogicalOffset uint16
+	// LogicalWordCount is the number of words in the logical view.
+	LogicalWordCount uint16
+	// SliceOffset is the word offset of the logical view within the physical response.
+	SliceOffset uint16
+	// SliceWordCount is the number of physical-response words retained for the logical view.
+	SliceWordCount uint16
 }
 
 // LogicalViewID returns the distinct dependent observation identity.

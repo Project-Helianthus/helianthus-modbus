@@ -18,7 +18,9 @@ const maxRTUProductionPrivateResponses = 8
 // private-function exchange. The zero value disables it. Admission and
 // MaxResponses are set together or not at all.
 type RTUPrivateFunctionConfig struct {
-	Admission    RTUPrivateFunctionAdmission
+	// Admission supplies the required upstream fail-closed decision before any send.
+	Admission RTUPrivateFunctionAdmission
+	// MaxResponses bounds correlated normal frames from one through eight when enabled.
 	MaxResponses int
 }
 
@@ -42,17 +44,25 @@ func validateRTUPrivateFunctionConfig(config RTUPrivateFunctionConfig) error {
 // the endpoint rechecks the admitted generation before sending. Its execution
 // time is caller-owned and is not bounded by ResponseTimeout.
 type RTUPrivateFunctionAdmission interface {
+	// AdmitRTUPrivateFunction decides whether upstream authorizes this exact candidate; false
+	// prevents sending.
 	AdmitRTUPrivateFunction(RTUPrivateFunctionAdmissionRequest) bool
 }
 
 // RTUPrivateFunctionAdmissionRequest describes one candidate exchange. Payload
 // is an independent copy; changing it does not change the bytes sent.
 type RTUPrivateFunctionAdmissionRequest struct {
-	Endpoint   string
+	// Endpoint identifies the configured transport owner; it carries no vendor meaning.
+	Endpoint string
+	// Generation identifies the endpoint lifecycle that admitted the exchange.
 	Generation uint64
-	UnitID     byte
-	Function   PrivateFunctionCode
-	Payload    []byte
+	// UnitID retains the addressed unit byte for correlation and admission.
+	UnitID byte
+	// Function identifies the request function without interpreting register contents.
+	Function PrivateFunctionCode
+	// Payload contains a copy of opaque request bytes; admission cannot change the transmitted
+	// request through it.
+	Payload []byte
 }
 
 // RTUPrivateFunctionDisposition is a caller-owned classification of one
@@ -71,6 +81,8 @@ const (
 // already passed RTU integrity, unit, and function correlation, and never
 // interprets the payload itself.
 type RTUPrivateFunctionResponseClassifier interface {
+	// ClassifyRTUPrivateFunctionResponse classifies a correlated opaque frame as continue or
+	// terminal; an error fences the exchange.
 	ClassifyRTUPrivateFunctionResponse(RTUPrivateFunctionResponseADU) (RTUPrivateFunctionDisposition, error)
 }
 
@@ -85,20 +97,35 @@ var errRTUPrivateFunctionClassifier = errors.New("rtu private-function classifie
 // included); it is false for any malformed, CRC-failed, mismatched, or partial
 // frame and when no frame arrived.
 type RTUPrivateFunctionEvidence struct {
-	Endpoint        string
-	Generation      uint64
-	RequestID       uint64
-	UnitID          byte
-	Function        PrivateFunctionCode
-	RequestADU      []byte
-	ResponseADUs    [][]byte
-	SentAt          time.Duration
-	ReceivedAt      time.Duration
-	IntegrityValid  bool
+	// Endpoint identifies the configured transport owner; it carries no vendor meaning.
+	Endpoint string
+	// Generation identifies the endpoint lifecycle that admitted the exchange.
+	Generation uint64
+	// RequestID identifies the operation within its owning endpoint.
+	RequestID uint64
+	// UnitID retains the addressed unit byte for correlation and admission.
+	UnitID byte
+	// Function identifies the request function without interpreting register contents.
+	Function PrivateFunctionCode
+	// RequestADU retains the exact outgoing frame bytes.
+	RequestADU []byte
+	// ResponseADUs retains received frames in arrival order, including a partial or failing final
+	// frame.
+	ResponseADUs [][]byte
+	// SentAt is the stream-relative monotonic offset at send, expressed as a duration.
+	SentAt time.Duration
+	// ReceivedAt is the monotonic completion offset when populated, expressed as a duration.
+	ReceivedAt time.Duration
+	// IntegrityValid reports successful integrity and correlation checks, not device qualification.
+	IntegrityValid bool
+	// TerminalOutcome records the terminal result rather than granting further use.
 	TerminalOutcome string
-	Current         bool
-	ReceiptWall     time.Time
-	ClockEpoch      string
+	// Current is derived from success in the current open, unfenced endpoint generation.
+	Current bool
+	// ReceiptWall is the wall-clock receipt observation; it does not establish monotonic order.
+	ReceiptWall time.Time
+	// ClockEpoch identifies the monotonic timestamp domain of this receipt.
+	ClockEpoch string
 }
 
 func (e RTUPrivateFunctionEvidence) copy() RTUPrivateFunctionEvidence {

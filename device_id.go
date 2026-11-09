@@ -12,9 +12,13 @@ const (
 type DeviceIDAccess byte
 
 const (
-	DeviceIDBasic      DeviceIDAccess = 0x01
-	DeviceIDRegular    DeviceIDAccess = 0x02
-	DeviceIDExtended   DeviceIDAccess = 0x03
+	// DeviceIDBasic selects the basic device-identification stream.
+	DeviceIDBasic DeviceIDAccess = 0x01
+	// DeviceIDRegular selects the regular device-identification stream.
+	DeviceIDRegular DeviceIDAccess = 0x02
+	// DeviceIDExtended selects the extended device-identification stream.
+	DeviceIDExtended DeviceIDAccess = 0x03
+	// DeviceIDIndividual requests one device-identification object rather than a stream.
 	DeviceIDIndividual DeviceIDAccess = 0x04
 )
 
@@ -32,7 +36,9 @@ type DeviceIDRequest struct {
 
 // DeviceIDObject retains an object's exact length-delimited bytes.
 type DeviceIDObject struct {
-	ID    byte
+	// ID is the raw device-identification object identifier.
+	ID byte
+	// Value contains length-delimited object bytes without vendor or text interpretation.
 	Value []byte
 }
 
@@ -73,16 +79,22 @@ func (segment DeviceIDSegment) Objects() []DeviceIDObject {
 
 // DeviceIDLimits bounds traversal work and aggregate allocation.
 type DeviceIDLimits struct {
-	MaxSegments   int
-	MaxObjects    int
+	// MaxSegments bounds the number of device-identification response segments aggregated.
+	MaxSegments int
+	// MaxObjects bounds the number of device-identification objects aggregated.
+	MaxObjects int
+	// MaxValueBytes bounds the total retained object-value bytes, not each object's size.
 	MaxValueBytes int
 }
 
 // DeviceIDResult is published only after a complete valid traversal.
 type DeviceIDResult struct {
+	// Conformity retains the peer's conformity byte without turning it into a support claim.
 	Conformity DeviceIDConformity
-	Objects    []DeviceIDObject
-	Segments   []DeviceIDSegment
+	// Objects retains decoded object identifiers and their opaque values.
+	Objects []DeviceIDObject
+	// Segments retains the validated request-bound segments of a complete traversal.
+	Segments []DeviceIDSegment
 }
 
 // DefaultDeviceIDLimits returns the closed V1 aggregation bounds.
@@ -925,16 +937,26 @@ const (
 // every received byte; the other fields are views decoded from it. Paging and
 // aggregation decode PDU again, so only the received bytes decide them.
 type DeviceIDPage struct {
-	Request          DeviceIDRequest
-	PDU              []byte
-	AccessCode       DeviceIDAccess
-	Conformity       DeviceIDConformity
+	// Request retains the validated request used for correlation and decoding.
+	Request DeviceIDRequest
+	// PDU retains every received PDU byte, including any undecoded suffix.
+	PDU []byte
+	// AccessCode retains the page's received device-identification access byte.
+	AccessCode DeviceIDAccess
+	// Conformity retains the peer's conformity byte without turning it into a support claim.
+	Conformity DeviceIDConformity
+	// MoreFollowsValue retains the raw continuation byte; any nonzero value means more follows.
 	MoreFollowsValue byte
-	NextObjectID     byte
-	DeclaredObjects  int
-	Objects          []DeviceIDObject
-	UndecodedOffset  int
-	Anomalies        []DeviceIDAnomaly
+	// NextObjectID retains the peer-supplied continuation cursor.
+	NextObjectID byte
+	// DeclaredObjects is the object count advertised in the received page header.
+	DeclaredObjects int
+	// Objects retains decoded object identifiers and their opaque values.
+	Objects []DeviceIDObject
+	// UndecodedOffset is the byte index where undecoded PDU data begins.
+	UndecodedOffset int
+	// Anomalies records deviations without silently repairing the received evidence.
+	Anomalies []DeviceIDAnomaly
 }
 
 // MoreFollows reports a non-zero more-follows byte.
@@ -958,11 +980,16 @@ func (page DeviceIDPage) HasAnomaly(anomaly DeviceIDAnomaly) bool {
 // page with all of its bytes; Anomalies lists each page and traversal
 // anomaly once, in first-seen order.
 type DeviceIDTolerantResult struct {
-	Complete   bool
+	// Complete reports a terminal page with more-follows zero; it does not imply absence of anomalies.
+	Complete bool
+	// Conformity retains the peer's conformity byte without turning it into a support claim.
 	Conformity DeviceIDConformity
-	Objects    []DeviceIDObject
-	Pages      []DeviceIDPage
-	Anomalies  []DeviceIDAnomaly
+	// Objects retains decoded object identifiers and their opaque values.
+	Objects []DeviceIDObject
+	// Pages retains each received page and its exact bytes, including anomalous pages.
+	Pages []DeviceIDPage
+	// Anomalies records deviations without silently repairing the received evidence.
+	Anomalies []DeviceIDAnomaly
 }
 
 // HasAnomaly reports whether the traversal carries the named anomaly.

@@ -19,16 +19,23 @@ const (
 type RTUParity string
 
 const (
+	// RTUParityNone selects a serial format without a parity bit.
 	RTUParityNone RTUParity = "none"
+	// RTUParityEven selects an even parity bit.
 	RTUParityEven RTUParity = "even"
-	RTUParityOdd  RTUParity = "odd"
+	// RTUParityOdd selects an odd parity bit.
+	RTUParityOdd RTUParity = "odd"
 )
 
 // RTUTimingConfig defines fixture timing and finite quarantine bounds.
 type RTUTimingConfig struct {
-	Baud     uint32
+	// Baud is the configured serial bit rate in bits per second.
+	Baud uint32
+	// DataBits is the character data width; validation requires eight bits.
 	DataBits uint8
-	Parity   RTUParity
+	// Parity selects none, even, or odd serial parity.
+	Parity RTUParity
+	// StopBits is the stop-bit count; validation accepts one or two.
 	StopBits uint8
 	// InterCharacterSafety also overrides the production typed-read host gap
 	// allowance (default max(t1.5, 20ms)). To select a larger value, increase
@@ -36,9 +43,13 @@ type RTUTimingConfig struct {
 	// Generic frame decoders and opaque sessions use t1.5 plus its configured
 	// safety increase, without the host allowance.
 	InterCharacterSafety time.Duration
-	InterFrameSafety     time.Duration
-	MaxResponseLatency   time.Duration
-	MaxQuiescence        time.Duration
+	// InterFrameSafety overrides the inter-frame interval when nonzero; it cannot shorten the base
+	// interval.
+	InterFrameSafety time.Duration
+	// MaxResponseLatency bounds response latency and must be positive.
+	MaxResponseLatency time.Duration
+	// MaxQuiescence bounds recovery observation and must exceed MaxResponseLatency.
+	MaxQuiescence time.Duration
 }
 
 // RTUTiming is one validated immutable RTU timing contract.

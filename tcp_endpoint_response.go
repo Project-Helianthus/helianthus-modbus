@@ -8,6 +8,9 @@ import (
 	"time"
 )
 
+// Read receives and correlates frames for one live connection under bounded deadlines.
+// Successful views and frame evidence may accompany an error; callers must retain those partial
+// results. Event-sink reentry and invalid handles are rejected.
 func (endpoint *TCPEndpoint) Read(
 	ctx context.Context,
 	handle TCPConnectionHandle,

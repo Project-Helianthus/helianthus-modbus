@@ -9,6 +9,9 @@ import (
 	"strconv"
 )
 
+// NewTCPEndpoint validates finite pool, scheduler, decoder, deadline, and replay bounds and
+// creates their sole owner. It opens no connection; invalid configuration returns an error
+// without an endpoint.
 func NewTCPEndpoint(config TCPEndpointConfig) (*TCPEndpoint, error) {
 	remoteEndpoint, remoteErr := configuredTCPRemote(config.Endpoint)
 	if remoteErr != nil ||

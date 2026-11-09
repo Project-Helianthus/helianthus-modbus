@@ -10,7 +10,9 @@ import (
 
 // ConnectionLimits bounds one socket generation.
 type ConnectionLimits struct {
-	MaxInFlight   int
+	// MaxInFlight caps simultaneous request reservations on one socket generation.
+	MaxInFlight int
+	// MaxTombstones caps abandoned response identities retained to prevent unsafe reuse.
 	MaxTombstones int
 }
 
@@ -84,11 +86,17 @@ func (reservation TCPReservation) DeadlineOffset() time.Duration {
 type TransmitResult byte
 
 const (
+	// TransmitProvableZero proves that no byte reached the peer.
 	TransmitProvableZero TransmitResult = iota + 1
+	// TransmitPartial records a known incomplete transmission requiring recovery.
 	TransmitPartial
+	// TransmitIndeterminate records an error without proof of the transmitted byte count.
 	TransmitIndeterminate
+	// TransmitCancellationRace records cancellation racing with transmission completion.
 	TransmitCancellationRace
+	// TransmitAmbiguous records completion whose transmission certainty cannot be established.
 	TransmitAmbiguous
+	// TransmitComplete records complete transmission, not a successful protocol response.
 	TransmitComplete
 )
 
@@ -116,7 +124,9 @@ func (result TransmitResult) String() string {
 type AbandonReason byte
 
 const (
+	// AbandonTimeout retires a waiter whose response deadline expired.
 	AbandonTimeout AbandonReason = iota + 1
+	// AbandonCancellation retires a waiter cancelled by its caller.
 	AbandonCancellation
 )
 
@@ -140,11 +150,17 @@ func (transition OwnerTransition) FailedReservations() []TCPReservation {
 type WireOutcome string
 
 const (
-	WireSuccessfulData       WireOutcome = "successful_data"
-	WireProtocolException    WireOutcome = "protocol_exception"
-	WireMalformedResponse    WireOutcome = "malformed_response"
+	// WireSuccessfulData classifies correlated, validated response data.
+	WireSuccessfulData WireOutcome = "successful_data"
+	// WireProtocolException classifies a correlated exception response.
+	WireProtocolException WireOutcome = "protocol_exception"
+	// WireMalformedResponse classifies a received response that failed validation.
+	WireMalformedResponse WireOutcome = "malformed_response"
+	// WireLateAfterAbandonment classifies a reply for a retired waiter; it cannot satisfy a new
+	// request.
 	WireLateAfterAbandonment WireOutcome = "late_after_abandonment"
-	WireDroppedUncorrelated  WireOutcome = "dropped_uncorrelated"
+	// WireDroppedUncorrelated classifies a frame without a safe request binding.
+	WireDroppedUncorrelated WireOutcome = "dropped_uncorrelated"
 )
 
 // WireResponse retains request-bound response identity and exact bytes.
@@ -166,28 +182,46 @@ type WireResponse struct {
 // DiagnosticFrameProvenance identifies an uncorrelated received frame without
 // attributing it to a request.
 type DiagnosticFrameProvenance struct {
-	Endpoint                    string
-	ConnectionID                uint64
+	// Endpoint identifies the configured transport owner; it carries no vendor meaning.
+	Endpoint string
+	// ConnectionID identifies the socket within its owning endpoint.
+	ConnectionID uint64
+	// ReceivedTransportGeneration retains the generation supplied with the received frame.
 	ReceivedTransportGeneration uint64
-	ActiveTransportGeneration   uint64
-	UnitID                      byte
-	ReceivedFunction            FunctionCode
+	// ActiveTransportGeneration records the owner's active generation when the frame was examined.
+	ActiveTransportGeneration uint64
+	// UnitID retains the addressed unit byte for correlation and admission.
+	UnitID byte
+	// ReceivedFunction retains the received function byte, including its exception bit.
+	ReceivedFunction FunctionCode
 }
 
 // WireProvenance binds a wire response to its immutable physical request.
 type WireProvenance struct {
-	Endpoint            string
-	ConnectionID        uint64
-	Transport           TransportFamily
+	// Endpoint identifies the configured transport owner; it carries no vendor meaning.
+	Endpoint string
+	// ConnectionID identifies the socket within its owning endpoint.
+	ConnectionID uint64
+	// Transport identifies the transport family used for this evidence.
+	Transport TransportFamily
+	// TransportGeneration binds the record to one transport lifecycle, preventing stale correlation.
 	TransportGeneration uint64
-	UnitID              byte
-	RequestedFunction   FunctionCode
-	ReceivedFunction    FunctionCode
-	Table               LogicalTable
-	Offset              uint16
-	Quantity            uint16
-	DeviceIDAccess      DeviceIDAccess
-	DeviceIDObjectID    byte
+	// UnitID retains the addressed unit byte for correlation and admission.
+	UnitID byte
+	// RequestedFunction retains the function bound to the originating request.
+	RequestedFunction FunctionCode
+	// ReceivedFunction retains the received function byte, including its exception bit.
+	ReceivedFunction FunctionCode
+	// Table distinguishes holding-register reads from input-register reads.
+	Table LogicalTable
+	// Offset is the zero-based starting register address, in words.
+	Offset uint16
+	// Quantity is the number of consecutive 16-bit registers requested.
+	Quantity uint16
+	// DeviceIDAccess retains the requested FC2B/MEI0E access code.
+	DeviceIDAccess DeviceIDAccess
+	// DeviceIDObjectID retains the requested device-identification object cursor.
+	DeviceIDObjectID byte
 }
 
 // Outcome returns the classified response outcome.

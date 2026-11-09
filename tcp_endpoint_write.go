@@ -5,6 +5,9 @@ import (
 	"errors"
 )
 
+// Write sends one endpoint-owned dispatch using the caller context and immutable deadlines. It
+// records transmission certainty, returns required owner transitions on failure, and rejects
+// stale or reused dispatches.
 func (endpoint *TCPEndpoint) Write(
 	ctx context.Context,
 	dispatch TCPDispatch,

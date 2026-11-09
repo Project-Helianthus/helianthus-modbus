@@ -12,6 +12,7 @@ const (
 type RTUMaturity string
 
 const (
+	// RTUMaturityExperimental marks experimental maturity without support or physical qualification.
 	RTUMaturityExperimental RTUMaturity = "experimental"
 )
 

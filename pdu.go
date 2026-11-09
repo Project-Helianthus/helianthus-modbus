@@ -13,8 +13,12 @@ const (
 type FunctionCode byte
 
 const (
-	FunctionReadHoldingRegisters  FunctionCode = 0x03
-	FunctionReadInputRegisters    FunctionCode = 0x04
+	// FunctionReadHoldingRegisters selects the standard FC03 read surface.
+	FunctionReadHoldingRegisters FunctionCode = 0x03
+	// FunctionReadInputRegisters selects the standard FC04 read surface.
+	FunctionReadInputRegisters FunctionCode = 0x04
+	// FunctionEncapsulatedInterface selects FC2B; this package's standard device-identification
+	// surface uses MEI0E.
 	FunctionEncapsulatedInterface FunctionCode = 0x2b
 )
 
@@ -22,31 +26,46 @@ const (
 type LogicalTable string
 
 const (
+	// HoldingRegisters keeps FC03 provenance distinct from numerically equal FC04 ranges.
 	HoldingRegisters LogicalTable = "holding_registers"
-	InputRegisters   LogicalTable = "input_registers"
+	// InputRegisters keeps FC04 provenance distinct from numerically equal FC03 ranges.
+	InputRegisters LogicalTable = "input_registers"
 )
 
 // ErrorKind classifies local validation and remote protocol failures.
 type ErrorKind string
 
 const (
+	// ErrorUnsupportedOperation classifies a function outside the requested codec's admitted surface.
 	ErrorUnsupportedOperation ErrorKind = "unsupported_operation"
-	ErrorInvalidRequest       ErrorKind = "invalid_request"
-	ErrorInvalidRange         ErrorKind = "invalid_range"
-	ErrorMalformedResponse    ErrorKind = "malformed_response"
-	ErrorExceptionResponse    ErrorKind = "exception_response"
+	// ErrorInvalidRequest classifies invalid request configuration or identity.
+	ErrorInvalidRequest ErrorKind = "invalid_request"
+	// ErrorInvalidRange classifies invalid quantities, wrapping ranges, or exhausted bounds.
+	ErrorInvalidRange ErrorKind = "invalid_range"
+	// ErrorMalformedResponse classifies bytes that fail the selected response contract.
+	ErrorMalformedResponse ErrorKind = "malformed_response"
+	// ErrorExceptionResponse classifies a correlated protocol exception rather than successful data.
+	ErrorExceptionResponse ErrorKind = "exception_response"
 )
 
 // ProtocolError preserves protocol identity without profile interpretation.
 type ProtocolError struct {
-	Kind              ErrorKind
+	// Kind classifies this record for diagnostics.
+	Kind ErrorKind
+	// RequestedFunction retains the function bound to the originating request.
 	RequestedFunction FunctionCode
-	ReceivedFunction  FunctionCode
-	ExceptionCode     byte
-	Field             string
-	Offset            int
+	// ReceivedFunction retains the received function byte, including its exception bit.
+	ReceivedFunction FunctionCode
+	// ExceptionCode retains the exception reply byte when Kind is ErrorExceptionResponse.
+	ExceptionCode byte
+	// Field names the failed validation field for diagnostics.
+	Field string
+	// Offset is the byte index of the validation failure; a negative value omits the byte location.
+	Offset int
 }
 
+// Error returns the failure kind, optional field, and nonnegative byte offset; a nil receiver
+// formats as <nil>.
 func (err *ProtocolError) Error() string {
 	if err == nil {
 		return "<nil>"
@@ -87,15 +106,21 @@ type ReadRegistersRequest struct {
 
 // ReadProvenance identifies the exact logical read represented by a response.
 type ReadProvenance struct {
+	// Function identifies the request function without interpreting register contents.
 	Function FunctionCode
-	Table    LogicalTable
-	Offset   uint16
+	// Table distinguishes holding-register reads from input-register reads.
+	Table LogicalTable
+	// Offset is the zero-based starting register address, in words.
+	Offset uint16
+	// Quantity is the number of consecutive 16-bit registers requested.
 	Quantity uint16
 }
 
 // ReadRegistersResponse contains uninterpreted wire-order words.
 type ReadRegistersResponse struct {
-	Words      []uint16
+	// Words contains uninterpreted 16-bit registers in wire order.
+	Words []uint16
+	// Provenance binds decoded words to the exact logical read request.
 	Provenance ReadProvenance
 }
 

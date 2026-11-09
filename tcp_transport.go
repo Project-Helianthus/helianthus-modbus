@@ -25,14 +25,18 @@ const (
 // TCPTransportTimer is an injected one-shot monotonic timer. Stop returns true
 // only when it prevents the callback; after false, the callback must finish.
 type TCPTransportTimer interface {
+	// Stop prevents a pending callback when possible; false means the callback may already be running.
 	Stop() bool
 }
 
 // TCPMonotonicClock owns monotonic offsets and finite operation timers. Now
 // must be nondecreasing, and AfterFunc must use that same monotonic timeline.
 type TCPMonotonicClock interface {
+	// ContractVersion identifies the monotonic clock contract used to interpret offsets.
 	ContractVersion() string
+	// Now returns a nonnegative, nondecreasing monotonic offset as a duration.
 	Now() time.Duration
+	// AfterFunc schedules a one-shot callback on the same monotonic timeline as Now.
 	AfterFunc(time.Duration, func()) TCPTransportTimer
 }
 
@@ -40,85 +44,152 @@ type TCPMonotonicClock interface {
 type TCPTransportEventKind string
 
 const (
-	TCPEventEnqueue              TCPTransportEventKind = "enqueue"
-	TCPEventAdmission            TCPTransportEventKind = "admission"
-	TCPEventQueueService         TCPTransportEventKind = "queue_service"
-	TCPEventCoalescing           TCPTransportEventKind = "coalescing"
-	TCPEventReconnect            TCPTransportEventKind = "reconnect"
-	TCPEventRequestTimerArm      TCPTransportEventKind = "request_timer_arm"
-	TCPEventRequestTimerFire     TCPTransportEventKind = "request_timer_fire"
-	TCPEventResponseTimerArm     TCPTransportEventKind = "response_timer_arm"
-	TCPEventResponseTimerFire    TCPTransportEventKind = "response_timer_fire"
-	TCPEventCallerCancellation   TCPTransportEventKind = "caller_cancellation"
-	TCPEventWritePrepared        TCPTransportEventKind = "write_prepared"
-	TCPEventWriteInvocation      TCPTransportEventKind = "write_invocation"
-	TCPEventWriteReturn          TCPTransportEventKind = "write_return"
-	TCPEventReadInvocation       TCPTransportEventKind = "read_invocation"
-	TCPEventReadReturn           TCPTransportEventKind = "read_return"
-	TCPEventTransmitResult       TCPTransportEventKind = "transmit_result"
-	TCPEventResponseReceive      TCPTransportEventKind = "response_receive"
+	// TCPEventEnqueue records submission to endpoint admission.
+	TCPEventEnqueue TCPTransportEventKind = "enqueue"
+	// TCPEventAdmission records the admission decision.
+	TCPEventAdmission TCPTransportEventKind = "admission"
+	// TCPEventQueueService records deterministic selection for service.
+	TCPEventQueueService TCPTransportEventKind = "queue_service"
+	// TCPEventCoalescing records attachment of logical views to a physical read.
+	TCPEventCoalescing TCPTransportEventKind = "coalescing"
+	// TCPEventReconnect records endpoint reconnect progression.
+	TCPEventReconnect TCPTransportEventKind = "reconnect"
+	// TCPEventRequestTimerArm records arming the operation deadline timer.
+	TCPEventRequestTimerArm TCPTransportEventKind = "request_timer_arm"
+	// TCPEventRequestTimerFire records expiration of the operation deadline timer.
+	TCPEventRequestTimerFire TCPTransportEventKind = "request_timer_fire"
+	// TCPEventResponseTimerArm records arming the response deadline timer.
+	TCPEventResponseTimerArm TCPTransportEventKind = "response_timer_arm"
+	// TCPEventResponseTimerFire records expiration of a response waiter.
+	TCPEventResponseTimerFire TCPTransportEventKind = "response_timer_fire"
+	// TCPEventCallerCancellation records caller cancellation without implying zero transmission.
+	TCPEventCallerCancellation TCPTransportEventKind = "caller_cancellation"
+	// TCPEventWritePrepared records preparation before transport write invocation.
+	TCPEventWritePrepared TCPTransportEventKind = "write_prepared"
+	// TCPEventWriteInvocation records entry into a concrete transport write.
+	TCPEventWriteInvocation TCPTransportEventKind = "write_invocation"
+	// TCPEventWriteReturn records return from the concrete transport write.
+	TCPEventWriteReturn TCPTransportEventKind = "write_return"
+	// TCPEventReadInvocation records entry into a concrete transport read.
+	TCPEventReadInvocation TCPTransportEventKind = "read_invocation"
+	// TCPEventReadReturn records return from the concrete transport read.
+	TCPEventReadReturn TCPTransportEventKind = "read_return"
+	// TCPEventTransmitResult records transmission certainty for recovery decisions.
+	TCPEventTransmitResult TCPTransportEventKind = "transmit_result"
+	// TCPEventResponseReceive records receipt and classification of response bytes.
+	TCPEventResponseReceive TCPTransportEventKind = "response_receive"
+	// TCPEventQuarantineTransition records entry into uncertainty isolation.
 	TCPEventQuarantineTransition TCPTransportEventKind = "quarantine_transition"
-	TCPEventJitterBackoff        TCPTransportEventKind = "jitter_backoff"
+	// TCPEventJitterBackoff records the replayable reconnect delay.
+	TCPEventJitterBackoff TCPTransportEventKind = "jitter_backoff"
 )
 
 // TCPTransportEvent binds a monotonic offset to owner-assigned tie order.
 type TCPTransportEvent struct {
+	// ClockContractVersion identifies the offset and timer contract needed for replay.
 	ClockContractVersion string
-	Endpoint             string
-	Kind                 TCPTransportEventKind
-	MonotonicOffset      time.Duration
-	Sequence             uint64
-	ConnectionID         uint64
-	TransportGeneration  uint64
-	RequestID            uint64
-	LogicalViewID        uint64
-	LogicalViewCount     int
-	PhysicalRequestID    uint64
-	WireResponseID       uint64
-	DiagnosticFrameID    uint64
-	TransactionID        uint16
-	UnitID               byte
-	AuthorizationScope   string
-	PollGeneration       uint64
-	DeadlineIdentity     uint64
-	DeadlineOffset       time.Duration
-	Delay                time.Duration
-	RequestedFunction    FunctionCode
-	ReceivedFunction     FunctionCode
-	LogicalTable         LogicalTable
-	PhysicalOffset       uint16
-	PhysicalQuantity     uint16
-	RawADUHex            string
-	TransmitResult       TransmitResult
-	WireOutcome          WireOutcome
-	Detail               string
+	// Endpoint identifies the configured transport owner; it carries no vendor meaning.
+	Endpoint string
+	// Kind classifies this record for diagnostics.
+	Kind TCPTransportEventKind
+	// MonotonicOffset is elapsed time on the owner's monotonic clock, expressed as a duration.
+	MonotonicOffset time.Duration
+	// Sequence orders events with equal monotonic offsets within the owner.
+	Sequence uint64
+	// ConnectionID identifies the socket within its owning endpoint.
+	ConnectionID uint64
+	// TransportGeneration binds the record to one transport lifecycle, preventing stale correlation.
+	TransportGeneration uint64
+	// RequestID identifies the operation within its owning endpoint.
+	RequestID uint64
+	// LogicalViewID identifies the caller's logical read within a physical exchange.
+	LogicalViewID uint64
+	// LogicalViewCount counts logical reads attached to the recorded physical operation.
+	LogicalViewCount int
+	// PhysicalRequestID identifies the shared physical exchange underlying logical views.
+	PhysicalRequestID uint64
+	// WireResponseID identifies a request-correlated response; zero means no such identity.
+	WireResponseID uint64
+	// DiagnosticFrameID identifies an uncorrelated frame without attributing it to a request.
+	DiagnosticFrameID uint64
+	// TransactionID is the MBAP transaction identifier within this socket lifetime.
+	TransactionID uint16
+	// UnitID retains the addressed unit byte for correlation and admission.
+	UnitID byte
+	// AuthorizationScope is the caller's isolation key; it does not itself grant operation authority.
+	AuthorizationScope string
+	// PollGeneration separates reads belonging to different caller polling cycles.
+	PollGeneration uint64
+	// DeadlineIdentity separates caller deadline domains even when register ranges coincide.
+	DeadlineIdentity uint64
+	// DeadlineOffset is an absolute monotonic deadline in nanoseconds on the owner's clock.
+	DeadlineOffset time.Duration
+	// Delay is the monotonic duration of the recorded timer or backoff step.
+	Delay time.Duration
+	// RequestedFunction retains the function bound to the originating request.
+	RequestedFunction FunctionCode
+	// ReceivedFunction retains the received function byte, including its exception bit.
+	ReceivedFunction FunctionCode
+	// LogicalTable distinguishes holding-register reads from input-register reads.
+	LogicalTable LogicalTable
+	// PhysicalOffset is the zero-based start of the physical register read, in words.
+	PhysicalOffset uint16
+	// PhysicalQuantity is the number of words requested by the physical read.
+	PhysicalQuantity uint16
+	// RawADUHex encodes exact frame bytes for the recorded transport event.
+	RawADUHex string
+	// TransmitResult records transmission certainty used to decide recovery and retry safety.
+	TransmitResult TransmitResult
+	// WireOutcome classifies the received frame's correlation and protocol outcome.
+	WireOutcome WireOutcome
+	// Detail retains the transition's diagnostic reason without adding protocol semantics.
+	Detail string
 }
 
 // TCPResponseClassMetrics counts immutable wire outcome classes.
 type TCPResponseClassMetrics struct {
-	SuccessfulData       uint64
-	ProtocolException    uint64
-	MalformedResponse    uint64
+	// SuccessfulData counts correlated data responses.
+	SuccessfulData uint64
+	// ProtocolException counts correlated exception replies.
+	ProtocolException uint64
+	// MalformedResponse counts frames classified as malformed responses.
+	MalformedResponse uint64
+	// LateAfterAbandonment counts replies received after their waiter was abandoned.
 	LateAfterAbandonment uint64
-	DroppedUncorrelated  uint64
+	// DroppedUncorrelated counts frames that could not be safely attributed to a request.
+	DroppedUncorrelated uint64
 }
 
 // TCPEndpointMetrics is the cumulative bounded operability view.
 type TCPEndpointMetrics struct {
-	QueueServices            uint64
-	TotalQueueWait           time.Duration
-	MaxQueueWait             time.Duration
-	CoalescedPhysicalReads   uint64
-	CoalescedLogicalViews    uint64
+	// QueueServices counts scheduler service decisions.
+	QueueServices uint64
+	// TotalQueueWait accumulates queue wait durations with saturation.
+	TotalQueueWait time.Duration
+	// MaxQueueWait is the greatest observed queue wait duration.
+	MaxQueueWait time.Duration
+	// CoalescedPhysicalReads counts physical reads that serve coalesced logical views.
+	CoalescedPhysicalReads uint64
+	// CoalescedLogicalViews counts logical views attached through coalescing.
+	CoalescedLogicalViews uint64
+	// CoalescedWireReadSavings counts planned wire reads avoided by coalescing.
 	CoalescedWireReadSavings uint64
-	Retries                  uint64
-	RequestTimeouts          uint64
-	ResponseTimeouts         uint64
-	Reconnects               uint64
-	Cancellations            uint64
-	SourceObservationGaps    uint64
-	EventSinkPanics          uint64
-	Responses                TCPResponseClassMetrics
+	// Retries counts admitted retry operations.
+	Retries uint64
+	// RequestTimeouts counts request timer expirations.
+	RequestTimeouts uint64
+	// ResponseTimeouts counts response timer expirations.
+	ResponseTimeouts uint64
+	// Reconnects counts recorded reconnect events.
+	Reconnects uint64
+	// Cancellations counts caller cancellation events.
+	Cancellations uint64
+	// SourceObservationGaps counts request and response timer expirations as source-observation gaps.
+	SourceObservationGaps uint64
+	// EventSinkPanics counts contained panics from diagnostic event callbacks.
+	EventSinkPanics uint64
+	// Responses reports cumulative counts by immutable wire outcome class.
+	Responses TCPResponseClassMetrics
 	// OversizePDUResponses counts received frames whose PDU exceeded
 	// MaxPDUSize; only tolerant framing delivers them.
 	OversizePDUResponses uint64
@@ -130,6 +201,8 @@ type TCPEndpointMetrics struct {
 // Implementations must still return promptly. Sink panics are contained and
 // counted in TCPEndpointMetrics.
 type TCPTransportEventSink interface {
+	// RecordTCPTransportEvent consumes one ordered event synchronously; callbacks must return
+	// promptly and must not reenter emitting endpoint operations.
 	RecordTCPTransportEvent(TCPTransportEvent)
 }
 
@@ -411,6 +484,7 @@ func saturatingDurationAdd(
 	return current + delta
 }
 
+// Exhausted reports whether event sequence allocation has stopped; a nil timeline is exhausted.
 func (timeline *tcpEndpointTimeline) Exhausted() bool {
 	if timeline == nil {
 		return true
@@ -422,14 +496,20 @@ func (timeline *tcpEndpointTimeline) Exhausted() bool {
 
 // TCPTransportConfig declares finite per-operation transport bounds.
 type TCPTransportConfig struct {
+	// MaxBufferedBytes caps retained stream-decoder bytes per connection.
 	MaxBufferedBytes int
-	Framing          TCPFraming
-	RequestDeadline  time.Duration
+	// Framing selects strict or tolerant MBAP handling; zero selects strict framing.
+	Framing TCPFraming
+	// RequestDeadline is the positive per-operation send deadline duration.
+	RequestDeadline time.Duration
+	// ResponseDeadline is the positive per-operation response deadline duration.
 	ResponseDeadline time.Duration
-	Clock            TCPMonotonicClock
-	EventSink        TCPTransportEventSink
-	timeline         *tcpEndpointTimeline
-	beforeClose      func()
+	// Clock supplies the owner's monotonic time domain.
+	Clock TCPMonotonicClock
+	// EventSink receives ordered diagnostic transitions; implementations must return promptly.
+	EventSink   TCPTransportEventSink
+	timeline    *tcpEndpointTimeline
+	beforeClose func()
 }
 
 // DefaultTCPTransportConfig returns the bounded compatibility configuration.
@@ -451,14 +531,17 @@ type realTCPMonotonicClock struct {
 	origin time.Time
 }
 
+// ContractVersion returns the stable monotonic clock contract identifier.
 func (clock *realTCPMonotonicClock) ContractVersion() string {
 	return tcpClockContractVersion
 }
 
+// Now returns elapsed monotonic time since this clock was constructed.
 func (clock *realTCPMonotonicClock) Now() time.Duration {
 	return time.Since(clock.origin)
 }
 
+// AfterFunc schedules a one-shot callback after the supplied duration on the same clock timeline.
 func (clock *realTCPMonotonicClock) AfterFunc(
 	delay time.Duration,
 	callback func(),
@@ -470,15 +553,20 @@ func (clock *realTCPMonotonicClock) AfterFunc(
 // that no byte reached the peer.
 type ProvableZeroWriteError interface {
 	error
+	// ProvablyNoBytesTransmitted reports whether the error proves that no request byte reached the
+	// peer.
 	ProvablyNoBytesTransmitted() bool
 }
 
 // TransportWriteError retains the mandatory write-result classification.
 type TransportWriteError struct {
+	// Result records mandatory write certainty for recovery decisions.
 	Result TransmitResult
-	Cause  error
+	// Cause retains the underlying error for diagnostics.
+	Cause error
 }
 
+// Error formats transmission certainty and the optional underlying cause.
 func (err *TransportWriteError) Error() string {
 	if err.Cause != nil {
 		return err.Result.String() + ": " + err.Cause.Error()
@@ -486,6 +574,7 @@ func (err *TransportWriteError) Error() string {
 	return err.Result.String()
 }
 
+// Unwrap returns the underlying transport error for errors.Is and errors.As.
 func (err *TransportWriteError) Unwrap() error {
 	return err.Cause
 }
@@ -1626,6 +1715,8 @@ func newSocketInterrupter(
 	}
 }
 
+// Interrupt forces pending socket I/O to return once, closing the socket if setting its
+// deadline fails.
 func (interrupter *socketInterrupter) Interrupt() {
 	interrupter.once.Do(func() {
 		if err := interrupter.setDeadline(expiredSocketDeadline); err == nil {
@@ -1636,6 +1727,7 @@ func (interrupter *socketInterrupter) Interrupt() {
 	})
 }
 
+// Reset clears a successfully installed interrupt deadline and returns any socket deadline error.
 func (interrupter *socketInterrupter) Reset() error {
 	if !interrupter.deadlineSet.Swap(false) {
 		return nil

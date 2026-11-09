@@ -10,10 +10,15 @@ import (
 // RTUSerialConfig identifies one explicitly configured local RTU serial endpoint.
 // It does not select a vendor profile or admit a protocol operation.
 type RTUSerialConfig struct {
-	Path     string
-	Baud     uint32
+	// Path is the explicitly selected local serial path; no discovery is performed.
+	Path string
+	// Baud is the configured serial bit rate in bits per second.
+	Baud uint32
+	// DataBits is the character data width; validation requires eight bits.
 	DataBits uint8
-	Parity   RTUParity
+	// Parity selects none, even, or odd serial parity.
+	Parity RTUParity
+	// StopBits is the stop-bit count; validation accepts one or two.
 	StopBits uint8
 }
 

@@ -90,6 +90,22 @@ class ParserTests(unittest.TestCase):
         text = 'def read():\n pass\ndef read():\n pass\n'
         self.assertEqual([f["symbol"] for f in ratchet.python_functions(text)], ["read", "read#2"])
 
+    def test_python_parenthesized_decorator_includes_opening_line(self):
+        for declaration in ("def read():", "async def read():"):
+            with self.subTest(declaration=declaration):
+                text = "@(\n" + "\n" * 148 + "decorator\n)\n" + declaration + "\n pass\n"
+                functions = ratchet.python_functions(text)
+                self.assertEqual(functions, [{"symbol": "read", "lines": 153}])
+                errors, notices = ratchet.evaluate([record(functions[0]["lines"])], {})
+                self.assertEqual(errors, ["new hard violation: source.go:Read:function_lines=153"])
+                self.assertEqual(notices, ["HARD source.go:Read:function_lines=153"])
+
+    def test_python_stacked_nested_decorators_ignore_continuation_operators(self):
+        text = ('class Reader:\n @first\n @(\n  # decorator expression\n'
+                '  left\n  @ right\n )\n async def read(self):\n  pass\n')
+        self.assertEqual(ratchet.python_functions(text), [
+            {"symbol": "Reader.read", "lines": 8}])
+
     def test_conditional_python_repeated_names(self):
         text = 'if True:\n def read():\n  pass\nelse:\n def read():\n  pass\n'
         self.assertEqual([f["symbol"] for f in ratchet.python_functions(text)], ["read", "read#2"])

@@ -19,12 +19,14 @@ exact, justified exceptions require a separate review of the baseline change.
 
 import argparse
 import ast
+import io
 import json
 import os
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import tokenize
 
 LIMITS = {
     "production": {"file_lines": (500, 1000), "function_lines": (80, 150),
@@ -48,6 +50,16 @@ def category(path):
 
 
 def python_functions(text):
+    tree = ast.parse(text)
+    decorator_lines = []
+    statement_start = True
+    for token in tokenize.generate_tokens(io.StringIO(text).readline):
+        if token.type in {tokenize.NEWLINE, tokenize.INDENT, tokenize.DEDENT}:
+            statement_start = True
+        elif token.type not in {tokenize.NL, tokenize.COMMENT}:
+            if statement_start and token.string == "@":
+                decorator_lines.append(token.start[0])
+            statement_start = False
     result = []
     seen = {}
 
@@ -59,14 +71,18 @@ def python_functions(text):
                 name = child.name + ("#" + str(seen[key]) if seen[key] > 1 else "")
                 qualified = (*scope, name)
                 if not isinstance(child, ast.ClassDef):
-                    start = min([child.lineno] + [d.lineno for d in child.decorator_list])
+                    start = child.lineno
+                    if child.decorator_list:
+                        # The expression may start after the decorator's opening @ token.
+                        start = max(line for line in decorator_lines
+                                    if line <= child.decorator_list[0].lineno)
                     result.append({"symbol": ".".join(qualified),
                                    "lines": child.end_lineno - start + 1})
                 visit(child, qualified)
             else:
                 visit(child, scope)
 
-    visit(ast.parse(text), ())
+    visit(tree, ())
     symbols = [item["symbol"] for item in result]
     if len(symbols) != len(set(symbols)):
         raise ValueError("ambiguous Python function identity")

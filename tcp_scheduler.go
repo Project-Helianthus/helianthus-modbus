@@ -9,27 +9,41 @@ import (
 
 // SchedulerLimits bounds endpoint admission and dependent state.
 type SchedulerLimits struct {
-	MaxActiveAdmissionKeys         int
-	ProtectedSlotsPerKey           int
-	SharedBurstSlots               int
-	TotalQueued                    int
-	MaxQueuedPerKey                int
+	// MaxActiveAdmissionKeys caps live authorization-scope and unit queue partitions.
+	MaxActiveAdmissionKeys int
+	// ProtectedSlotsPerKey reserves queue capacity per admission partition.
+	ProtectedSlotsPerKey int
+	// SharedBurstSlots adds shared queue capacity beyond protected slots.
+	SharedBurstSlots int
+	// TotalQueued caps aggregate queued admission weight.
+	TotalQueued int
+	// MaxQueuedPerKey caps queued admission weight in one admission partition.
+	MaxQueuedPerKey int
+	// MaxQueuedPerAuthorizationScope caps queued admission weight across units in one scope.
 	MaxQueuedPerAuthorizationScope int
-	MaxCoalescedDependentsPerKey   int
-	MaxRetryAttempts               int
-	MaxInFlightRequests            int
+	// MaxCoalescedDependentsPerKey caps logical coalescing dependents in one admission partition.
+	MaxCoalescedDependentsPerKey int
+	// MaxRetryAttempts caps scheduler retry progression.
+	MaxRetryAttempts int
+	// MaxInFlightRequests caps simultaneously active scheduler requests.
+	MaxInFlightRequests int
 }
 
 // AdmissionKey isolates queue capacity by authorization scope and unit.
 type AdmissionKey struct {
+	// AuthorizationScope is the caller's isolation key; it does not itself grant operation authority.
 	AuthorizationScope string
-	UnitID             byte
+	// UnitID retains the addressed unit byte for correlation and admission.
+	UnitID byte
 }
 
 // ScheduledRequest is one scheduler-owned read request.
 type ScheduledRequest struct {
-	RequestID      uint64
-	Key            AdmissionKey
+	// RequestID identifies the operation within its owning endpoint.
+	RequestID uint64
+	// Key selects the authorization-scope and unit admission partition.
+	Key AdmissionKey
+	// DeadlineOffset is an absolute monotonic deadline in nanoseconds on the owner's clock.
 	DeadlineOffset int64
 }
 
@@ -1229,22 +1243,31 @@ func (scheduler *EndpointScheduler) OrderMetadataSize() int {
 
 // JitterSource provides replayable bounded jitter.
 type JitterSource interface {
+	// Next returns replayable jitter within the supplied upper duration bound.
 	Next(upper time.Duration) time.Duration
 }
 
 // BackoffConfig declares bounded reconnect timing and trace identity.
 type BackoffConfig struct {
-	Floor             time.Duration
-	Ceiling           time.Duration
-	MaxAttempts       int
-	Jitter            JitterSource
+	// Floor is the positive minimum reconnect delay.
+	Floor time.Duration
+	// Ceiling caps reconnect delay and must be at least Floor.
+	Ceiling time.Duration
+	// MaxAttempts caps reconnect attempts before progression is exhausted.
+	MaxAttempts int
+	// Jitter supplies bounded replayable delay variation.
+	Jitter JitterSource
+	// JitterAlgorithmID identifies the jitter algorithm in replay evidence.
 	JitterAlgorithmID string
-	JitterVersion     string
-	JitterEvidence    string
+	// JitterVersion identifies the jitter algorithm version in replay evidence.
+	JitterVersion string
+	// JitterEvidence retains the caller's replay evidence for the jitter source.
+	JitterEvidence string
 }
 
 // DelayWaiter is an injected cancellation-aware timer.
 type DelayWaiter interface {
+	// Wait waits for the supplied duration or returns cancellation from the context.
 	Wait(context.Context, time.Duration) error
 }
 

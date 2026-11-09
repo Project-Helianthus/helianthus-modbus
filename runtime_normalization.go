@@ -12,22 +12,38 @@ import (
 type RuntimeAcquisitionSourceKind string
 
 const (
-	RuntimeAcquisitionSourceRuntime        RuntimeAcquisitionSourceKind = "runtime"
+	// RuntimeAcquisitionSourceRuntime labels evidence produced by the runtime path, not physical
+	// qualification.
+	RuntimeAcquisitionSourceRuntime RuntimeAcquisitionSourceKind = "runtime"
+	// RuntimeAcquisitionSourceOfflineFixture labels offline fixture evidence separately from
+	// runtime receipts.
 	RuntimeAcquisitionSourceOfflineFixture RuntimeAcquisitionSourceKind = "offline_fixture"
 )
 
 // RuntimeNormalizationFields are the ten required V1 documentary fields.
 type RuntimeNormalizationFields struct {
-	SchemaVersion                int
-	SourceKind                   RuntimeAcquisitionSourceKind
-	SourceEvidenceID             string
-	DocumentaryNotation          string
-	DocumentaryAddress           uint32
-	DocumentaryAddressBase       string
-	FunctionCode                 FunctionCode
-	LogicalTable                 LogicalTable
+	// SchemaVersion selects the admitted serialization schema.
+	SchemaVersion int
+	// SourceKind distinguishes runtime evidence from offline fixtures; it is not qualification.
+	SourceKind RuntimeAcquisitionSourceKind
+	// SourceEvidenceID binds the documentary record to its source evidence identity.
+	SourceEvidenceID string
+	// DocumentaryNotation names the caller-supplied address notation without interpreting register
+	// meaning.
+	DocumentaryNotation string
+	// DocumentaryAddress retains the documentary address before normalization.
+	DocumentaryAddress uint32
+	// DocumentaryAddressBase records the declared documentary address base.
+	DocumentaryAddressBase string
+	// FunctionCode identifies the admitted read function independently of documentary address
+	// notation.
+	FunctionCode FunctionCode
+	// LogicalTable distinguishes holding-register reads from input-register reads.
+	LogicalTable LogicalTable
+	// NormalizedZeroBasedPDUOffset is the admitted zero-based register offset in words.
 	NormalizedZeroBasedPDUOffset uint16
-	WordCount                    uint16
+	// WordCount is the number of 16-bit registers described by the record.
+	WordCount uint16
 }
 
 // RuntimeNormalizationRecord retains the exact admitted JSON bytes. Unknown

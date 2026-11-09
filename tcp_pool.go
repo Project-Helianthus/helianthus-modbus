@@ -8,8 +8,10 @@ import (
 
 // EndpointPoolLimits bounds live TCP sockets and each socket owner.
 type EndpointPoolLimits struct {
+	// MaxConnections caps simultaneously owned connections.
 	MaxConnections int
-	Connection     ConnectionLimits
+	// Connection bounds in-flight reservations and abandoned-response tombstones on each socket.
+	Connection ConnectionLimits
 }
 
 // TCPEndpointPool owns a bounded set of independent socket owners.

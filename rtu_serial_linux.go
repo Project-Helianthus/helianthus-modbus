@@ -99,6 +99,8 @@ func rtuSerialLinuxSpeed(baud uint32) (uint32, bool) {
 	}
 }
 
+// ReceiveByte waits for one serial byte using bounded polling and returns context or backend
+// errors.
 func (backend *linuxRTUSerialBackend) ReceiveByte(ctx context.Context) (byte, error) {
 	var buffer [1]byte
 	for {
@@ -136,6 +138,8 @@ func waitRTUSerialIdle(ctx context.Context) error {
 	}
 }
 
+// Write writes the supplied serial frame and preserves the byte count on failure; a short write
+// returns io.ErrShortWrite.
 func (backend *linuxRTUSerialBackend) Write(ctx context.Context, frame []byte) (int, error) {
 	if err := setRTUSerialDeadline(ctx, backend.file.SetWriteDeadline); err != nil {
 		return 0, err
@@ -150,6 +154,7 @@ func (backend *linuxRTUSerialBackend) Write(ctx context.Context, frame []byte) (
 	return written, nil
 }
 
+// Close closes the serial descriptor once and returns the retained close error.
 func (backend *linuxRTUSerialBackend) Close() error {
 	backend.closeOnce.Do(func() { backend.closeErr = backend.file.Close() })
 	return backend.closeErr

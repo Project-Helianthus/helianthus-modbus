@@ -13,12 +13,19 @@ import (
 // separate opt-in; its zero value leaves the private-function exchange
 // disabled and FC03/FC04 behavior unchanged.
 type RTUProductionConfig struct {
-	Endpoint        string
-	Serial          RTUSerialConfig
-	Timing          RTUTiming
+	// Endpoint identifies the configured transport owner; it carries no vendor meaning.
+	Endpoint string
+	// Serial supplies the explicit serial endpoint and format; no device discovery occurs.
+	Serial RTUSerialConfig
+	// Timing supplies validated character, frame, and finite recovery intervals.
+	Timing RTUTiming
+	// ResponseTimeout bounds each response wait; production validation limits it to 30 seconds.
 	ResponseTimeout time.Duration
-	Enabled         bool
-	Admission       RTUReadAdmission
+	// Enabled must be explicitly true before the configured outbound path can be constructed.
+	Enabled bool
+	// Admission supplies the required upstream fail-closed decision before any send.
+	Admission RTUReadAdmission
+	// PrivateFunction separately opts into opaque exchanges; its zero value disables that path.
 	PrivateFunction RTUPrivateFunctionConfig
 }
 
@@ -29,35 +36,62 @@ type RTUProductionConfig struct {
 // endpoint rechecks that the admitted generation is still open and unfenced.
 // Callback execution time is caller-owned and is not bounded by ResponseTimeout.
 type RTUReadAdmission interface {
+	// AdmitRTURead decides whether upstream authorizes this exact read candidate; false prevents
+	// sending.
 	AdmitRTURead(RTUReadAdmissionRequest) bool
 }
+
+// RTUReadAdmissionRequest describes the exact generation-bound FC03/FC04 candidate passed to
+// upstream admission.
 type RTUReadAdmissionRequest struct {
-	Endpoint         string
-	Generation       uint64
-	UnitID           byte
-	Function         FunctionCode
+	// Endpoint identifies the configured transport owner; it carries no vendor meaning.
+	Endpoint string
+	// Generation identifies the endpoint lifecycle that admitted the exchange.
+	Generation uint64
+	// UnitID retains the addressed unit byte for correlation and admission.
+	UnitID byte
+	// Function identifies the request function without interpreting register contents.
+	Function FunctionCode
+	// Offset and Quantity identify the zero-based starting register and consecutive word count.
 	Offset, Quantity uint16
 }
 
 // RTUReadEvidence is an immutable-by-value terminal exchange receipt.
 type RTUReadEvidence struct {
-	Endpoint        string
-	Generation      uint64
-	RequestID       uint64
-	UnitID          byte
-	Function        FunctionCode
-	Offset          uint16
-	Quantity        uint16
-	RequestADU      []byte
-	ResponseADU     []byte
-	SentAt          time.Duration
-	ReceivedAt      time.Duration
-	IntegrityValid  bool
+	// Endpoint identifies the configured transport owner; it carries no vendor meaning.
+	Endpoint string
+	// Generation identifies the endpoint lifecycle that admitted the exchange.
+	Generation uint64
+	// RequestID identifies the operation within its owning endpoint.
+	RequestID uint64
+	// UnitID retains the addressed unit byte for correlation and admission.
+	UnitID byte
+	// Function identifies the request function without interpreting register contents.
+	Function FunctionCode
+	// Offset is the zero-based starting register address, in words.
+	Offset uint16
+	// Quantity is the number of consecutive 16-bit registers requested.
+	Quantity uint16
+	// RequestADU retains the exact outgoing frame bytes.
+	RequestADU []byte
+	// ResponseADU retains the received frame bytes, including failure evidence when available.
+	ResponseADU []byte
+	// SentAt is the stream-relative monotonic offset at send, expressed as a duration.
+	SentAt time.Duration
+	// ReceivedAt is the monotonic completion offset when populated, expressed as a duration.
+	ReceivedAt time.Duration
+	// IntegrityValid reports successful integrity and correlation checks, not device qualification.
+	IntegrityValid bool
+	// TerminalOutcome records the terminal result rather than granting further use.
 	TerminalOutcome string
-	Current         bool
-	Words           []uint16
-	ReceiptWall     time.Time
-	ClockEpoch      string
+	// Current is derived from success in the current open, unfenced endpoint generation.
+	Current bool
+	// Words contains uninterpreted 16-bit registers in wire order.
+	Words []uint16
+	// ReceiptWall is the wall-clock receipt observation; it does not establish monotonic order.
+	ReceiptWall time.Time
+	// ClockEpoch identifies the monotonic timestamp domain of this receipt.
+	ClockEpoch string
 }
 
 func (e RTUReadEvidence) copy() RTUReadEvidence {

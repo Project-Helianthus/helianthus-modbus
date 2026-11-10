@@ -56,7 +56,7 @@
       "category": "production",
       "symbol": "",
       "metric": "file_lines",
-      "count": 1367
+      "count": 1394
     },
     {
       "path": "device_id.go",
@@ -64,6 +64,13 @@
       "symbol": "",
       "metric": "functions_per_file",
       "count": 45
+    },
+    {
+      "path": "device_id.go",
+      "category": "production",
+      "symbol": "DecodeDeviceIDPage",
+      "metric": "function_lines",
+      "count": 142
     },
     {
       "path": "device_id.go",
@@ -85,13 +92,6 @@
       "symbol": "validateExtendedDeviceIDProgress",
       "metric": "function_lines",
       "count": 85
-    },
-    {
-      "path": "device_id.go",
-      "category": "production",
-      "symbol": "DecodeDeviceIDPage",
-      "metric": "function_lines",
-      "count": 142
     },
     {
       "path": "device_id_test.go",
@@ -133,7 +133,7 @@
       "category": "production",
       "symbol": "",
       "metric": "file_lines",
-      "count": 1996
+      "count": 2066
     },
     {
       "path": "rtu_endpoint.go",
@@ -145,16 +145,16 @@
     {
       "path": "rtu_endpoint.go",
       "category": "production",
-      "symbol": "RTUFixtureEndpoint.BeginRead",
+      "symbol": "RTUFixtureEndpoint.BeginDeviceID",
       "metric": "function_lines",
-      "count": 87
+      "count": 94
     },
     {
       "path": "rtu_endpoint.go",
       "category": "production",
-      "symbol": "RTUFixtureEndpoint.BeginDeviceID",
+      "symbol": "RTUFixtureEndpoint.BeginRead",
       "metric": "function_lines",
-      "count": 94
+      "count": 87
     },
     {
       "path": "rtu_endpoint.go",
@@ -173,6 +173,13 @@
     {
       "path": "rtu_endpoint.go",
       "category": "production",
+      "symbol": "RTUFixtureEndpoint.TryResynchronize",
+      "metric": "function_lines",
+      "count": 129
+    },
+    {
+      "path": "rtu_endpoint.go",
+      "category": "production",
       "symbol": "RTUFixtureEndpoint.endFrame",
       "metric": "function_lines",
       "count": 126
@@ -183,13 +190,6 @@
       "symbol": "RTUFixtureEndpoint.receiveFrameLocked",
       "metric": "function_lines",
       "count": 186
-    },
-    {
-      "path": "rtu_endpoint.go",
-      "category": "production",
-      "symbol": "RTUFixtureEndpoint.TryResynchronize",
-      "metric": "function_lines",
-      "count": 129
     },
     {
       "path": "rtu_endpoint_test.go",
@@ -231,7 +231,7 @@
       "category": "production",
       "symbol": "",
       "metric": "file_lines",
-      "count": 1096
+      "count": 1157
     },
     {
       "path": "runtime_acquisition.go",
@@ -264,23 +264,9 @@
     {
       "path": "runtime_acquisition_test.go",
       "category": "test",
-      "symbol": "TestM106RuntimeOnlyIssuanceAndLosslessProvenance",
+      "symbol": "TestM106BoundsExhaustionAndDeterministicTombstones",
       "metric": "function_lines",
       "count": 151
-    },
-    {
-      "path": "runtime_acquisition_test.go",
-      "category": "test",
-      "symbol": "TestM106NonSuccessfulOutcomesNeverIssueCapabilities",
-      "metric": "function_lines",
-      "count": 175
-    },
-    {
-      "path": "runtime_acquisition_test.go",
-      "category": "test",
-      "symbol": "TestM106ConcurrentRegistrationUsesDeclaredOrdinals",
-      "metric": "function_lines",
-      "count": 121
     },
     {
       "path": "runtime_acquisition_test.go",
@@ -292,7 +278,21 @@
     {
       "path": "runtime_acquisition_test.go",
       "category": "test",
-      "symbol": "TestM106BoundsExhaustionAndDeterministicTombstones",
+      "symbol": "TestM106ConcurrentRegistrationUsesDeclaredOrdinals",
+      "metric": "function_lines",
+      "count": 121
+    },
+    {
+      "path": "runtime_acquisition_test.go",
+      "category": "test",
+      "symbol": "TestM106NonSuccessfulOutcomesNeverIssueCapabilities",
+      "metric": "function_lines",
+      "count": 175
+    },
+    {
+      "path": "runtime_acquisition_test.go",
+      "category": "test",
+      "symbol": "TestM106RuntimeOnlyIssuanceAndLosslessProvenance",
       "metric": "function_lines",
       "count": 151
     },
@@ -341,16 +341,16 @@
     {
       "path": "scripts/read_only_surface/main.go",
       "category": "production",
-      "symbol": "main",
+      "symbol": "literal#1",
       "metric": "function_lines",
-      "count": 202
+      "count": 100
     },
     {
       "path": "scripts/read_only_surface/main.go",
       "category": "production",
-      "symbol": "literal#1",
+      "symbol": "main",
       "metric": "function_lines",
-      "count": 100
+      "count": 202
     },
     {
       "path": "scripts/validate_m1_03_acceptance.py",
@@ -371,7 +371,7 @@
       "category": "production",
       "symbol": "",
       "metric": "file_lines",
-      "count": 530
+      "count": 538
     },
     {
       "path": "scripts/validate_scope_policy.py",
@@ -385,7 +385,7 @@
       "category": "production",
       "symbol": "",
       "metric": "file_lines",
-      "count": 1115
+      "count": 1138
     },
     {
       "path": "tcp_coalescing.go",
@@ -397,9 +397,9 @@
     {
       "path": "tcp_coalescing.go",
       "category": "production",
-      "symbol": "coalesceReads",
+      "symbol": "CoalescedRead.ReplaySuccessfulResponse",
       "metric": "function_lines",
-      "count": 127
+      "count": 120
     },
     {
       "path": "tcp_coalescing.go",
@@ -411,9 +411,9 @@
     {
       "path": "tcp_coalescing.go",
       "category": "production",
-      "symbol": "CoalescedRead.ReplaySuccessfulResponse",
+      "symbol": "coalesceReads",
       "metric": "function_lines",
-      "count": 120
+      "count": 127
     },
     {
       "path": "tcp_coalescing_test.go",
@@ -453,30 +453,23 @@
     {
       "path": "tcp_device_id_endpoint_test.go",
       "category": "test",
-      "symbol": "TestTCPEndpointDeviceIDTraversalPublishesOnlyCompleteAggregate",
+      "symbol": "TestTCPEndpointDeviceIDContinuationFailureRetryRestartsAtInitialCursor",
       "metric": "function_lines",
-      "count": 131
+      "count": 176
     },
     {
       "path": "tcp_device_id_endpoint_test.go",
       "category": "test",
-      "symbol": "TestTCPEndpointDeviceIDContinuationFailureRetryRestartsAtInitialCursor",
+      "symbol": "TestTCPEndpointDeviceIDTraversalPublishesOnlyCompleteAggregate",
       "metric": "function_lines",
-      "count": 176
+      "count": 131
     },
     {
       "path": "tcp_endpoint_lifecycle.go",
       "category": "production",
       "symbol": "",
       "metric": "file_lines",
-      "count": 526
-    },
-    {
-      "path": "tcp_endpoint_lifecycle.go",
-      "category": "production",
-      "symbol": "TCPEndpoint.OpenConnection",
-      "metric": "function_lines",
-      "count": 92
+      "count": 529
     },
     {
       "path": "tcp_endpoint_lifecycle.go",
@@ -486,11 +479,18 @@
       "count": 83
     },
     {
+      "path": "tcp_endpoint_lifecycle.go",
+      "category": "production",
+      "symbol": "TCPEndpoint.OpenConnection",
+      "metric": "function_lines",
+      "count": 92
+    },
+    {
       "path": "tcp_endpoint_read.go",
       "category": "production",
-      "symbol": "TCPEndpoint.EnqueueRead",
+      "symbol": "TCPEndpoint.Dispatch",
       "metric": "function_lines",
-      "count": 184
+      "count": 87
     },
     {
       "path": "tcp_endpoint_read.go",
@@ -502,9 +502,9 @@
     {
       "path": "tcp_endpoint_read.go",
       "category": "production",
-      "symbol": "TCPEndpoint.Dispatch",
+      "symbol": "TCPEndpoint.EnqueueRead",
       "metric": "function_lines",
-      "count": 87
+      "count": 184
     },
     {
       "path": "tcp_endpoint_response.go",
@@ -523,16 +523,16 @@
     {
       "path": "tcp_endpoint_retry.go",
       "category": "production",
-      "symbol": "TCPEndpoint.CancelLogical",
+      "symbol": "TCPEndpoint.Cancel",
       "metric": "function_lines",
-      "count": 152
+      "count": 201
     },
     {
       "path": "tcp_endpoint_retry.go",
       "category": "production",
-      "symbol": "TCPEndpoint.Cancel",
+      "symbol": "TCPEndpoint.CancelLogical",
       "metric": "function_lines",
-      "count": 201
+      "count": 152
     },
     {
       "path": "tcp_endpoint_retry.go",
@@ -588,7 +588,7 @@
       "category": "production",
       "symbol": "",
       "metric": "file_lines",
-      "count": 1421
+      "count": 1455
     },
     {
       "path": "tcp_owner.go",
@@ -609,7 +609,7 @@
       "category": "production",
       "symbol": "",
       "metric": "file_lines",
-      "count": 1456
+      "count": 1479
     },
     {
       "path": "tcp_scheduler.go",
@@ -621,16 +621,16 @@
     {
       "path": "tcp_scheduler.go",
       "category": "production",
-      "symbol": "EndpointScheduler.checkAdmissionCount",
+      "symbol": "EndpointScheduler.Retry",
       "metric": "function_lines",
-      "count": 125
+      "count": 87
     },
     {
       "path": "tcp_scheduler.go",
       "category": "production",
-      "symbol": "EndpointScheduler.Retry",
+      "symbol": "EndpointScheduler.checkAdmissionCount",
       "metric": "function_lines",
-      "count": 87
+      "count": 125
     },
     {
       "path": "tcp_scheduler.go",
@@ -658,7 +658,7 @@
       "category": "production",
       "symbol": "",
       "metric": "file_lines",
-      "count": 2041
+      "count": 2133
     },
     {
       "path": "tcp_transport.go",
@@ -670,23 +670,9 @@
     {
       "path": "tcp_transport.go",
       "category": "production",
-      "symbol": "tcpEndpointTimeline.record",
+      "symbol": "TCPTransport.readResponsesUntil",
       "metric": "function_lines",
-      "count": 85
-    },
-    {
-      "path": "tcp_transport.go",
-      "category": "production",
-      "symbol": "newTCPTransportWithConfig",
-      "metric": "function_lines",
-      "count": 91
-    },
-    {
-      "path": "tcp_transport.go",
-      "category": "production",
-      "symbol": "TCPTransport.writeReservationUntil",
-      "metric": "function_lines",
-      "count": 102
+      "count": 167
     },
     {
       "path": "tcp_transport.go",
@@ -698,9 +684,23 @@
     {
       "path": "tcp_transport.go",
       "category": "production",
-      "symbol": "TCPTransport.readResponsesUntil",
+      "symbol": "TCPTransport.writeReservationUntil",
       "metric": "function_lines",
-      "count": 167
+      "count": 102
+    },
+    {
+      "path": "tcp_transport.go",
+      "category": "production",
+      "symbol": "newTCPTransportWithConfig",
+      "metric": "function_lines",
+      "count": 91
+    },
+    {
+      "path": "tcp_transport.go",
+      "category": "production",
+      "symbol": "tcpEndpointTimeline.record",
+      "metric": "function_lines",
+      "count": 85
     },
     {
       "path": "tcp_transport_test.go",
@@ -719,23 +719,16 @@
     {
       "path": "tcp_transport_test.go",
       "category": "test",
+      "symbol": "TestTCPTransportPreWriteFailuresReleaseReservation",
+      "metric": "function_lines",
+      "count": 125
+    },
+    {
+      "path": "tcp_transport_test.go",
+      "category": "test",
       "symbol": "TestTCPTransportResponseReceiveCancellationTie",
       "metric": "function_lines",
       "count": 160
-    },
-    {
-      "path": "tcp_transport_test.go",
-      "category": "test",
-      "symbol": "literal#37",
-      "metric": "function_lines",
-      "count": 134
-    },
-    {
-      "path": "tcp_transport_test.go",
-      "category": "test",
-      "symbol": "TestTCPTransportWriteResultClassificationLifecycle",
-      "metric": "function_lines",
-      "count": 148
     },
     {
       "path": "tcp_transport_test.go",
@@ -747,9 +740,16 @@
     {
       "path": "tcp_transport_test.go",
       "category": "test",
-      "symbol": "TestTCPTransportPreWriteFailuresReleaseReservation",
+      "symbol": "TestTCPTransportWriteResultClassificationLifecycle",
       "metric": "function_lines",
-      "count": 125
+      "count": 148
+    },
+    {
+      "path": "tcp_transport_test.go",
+      "category": "test",
+      "symbol": "literal#37",
+      "metric": "function_lines",
+      "count": 134
     }
   ]
 }

@@ -292,3 +292,20 @@ Implementation code and repository documentation are licensed under
 Helianthus public `CC0-1.0` protocol-documentation lane, not in private
 bindings. See the
 [Helianthus licensing model](https://github.com/Project-Helianthus/.github/blob/main/LICENSING.md).
+
+### Python lint debt guard
+
+Install `requirements-lint.txt` for Ruff 0.15.10. Run
+`python3 scripts/check_python_lint.py` to check every Python source and test
+(excluding Git metadata, local scratch and bytecode caches). CI runs this guard
+through `scripts/ci_local.sh`. Naming (`N`), complexity (`C90`, maximum 10),
+and statement count (`PLR0915`, maximum 50) use a symbol-level baseline in
+[scripts/python-lint-baseline.json](scripts/python-lint-baseline.json).
+Inline suppressions do not bypass the guard.
+
+Regenerate offline with `python3 scripts/check_python_lint.py --generate` and
+review the result. The baseline records generator and tool versions, thresholds,
+path, rule, qualified symbol, diagnostic, measured value and occurrence count.
+New debt, growth and stale entries fail; remove resolved entries by regeneration.
+Run `python3 -m unittest discover -s tests -p test_python_lint.py` for synthetic
+negative tests. Existing source debt is recorded without changing its source.

@@ -8,6 +8,9 @@ if [[ "$(uname -s)" == "Linux" ]]; then
   export HELIANTHUS_REQUIRE_PTY=1
 fi
 
+echo "==> Python lint baseline"
+python3 scripts/check_python_lint.py
+
 echo "==> terminology gate"
 legacy_pattern='m[a]ster|s[l]ave'
 legacy_found=0

@@ -70,7 +70,7 @@
   },
   "trusted_python_tool_sha256": {
     "scripts/validate_m1_02_acceptance.py": "f64e579546bb49c22cdc092cae63d297d846e7e0d31aa46a91bddacc20b69092",
-    "scripts/validate_m1_03_acceptance.py": "6aac2592b38a1d1fc8c44026d101dca32e3cb1ef47dad370679a0acd0e353465",
+    "scripts/validate_m1_03_acceptance.py": "9acdd8b45d030c92dd0848e46fd41d783019d96d7c6db20e75513953fe074315",
     "scripts/validate_m1_04_acceptance.py": "67eefbf1db0b90cf172e627ad9c21a1a6641d8231500504d7f3b3e9f55d93add",
     "scripts/validate_m1_06_conformance.py": "8b22bfcfccecc23e6aa0c9c4661a0ca6d98f45f7813afca9e78c1af9a4b544d6"
   },

@@ -45,6 +45,8 @@ jobs:
         with:
           go-version: "1.22"
           cache: false
+      - name: Install pinned Python lint tool
+        run: python3 -m pip install -r requirements-lint.txt
       - run: ./scripts/ci_local.sh
         env:
           GH_TOKEN: ${{ github.token }}

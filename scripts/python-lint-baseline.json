@@ -1,0 +1,51 @@
+{
+  "generator_version": 1,
+  "ruff_version": "0.15.10",
+  "thresholds": {
+    "complexity": 10,
+    "statements": 50
+  },
+  "regenerate": "python3 scripts/check_python_lint.py --generate",
+  "violations": [
+    {
+      "path": "scripts/check_size_ratchet.py",
+      "rule": "C901",
+      "symbol": "python_functions",
+      "diagnostic": "`python_functions` is too complex",
+      "measured": 11,
+      "count": 1
+    },
+    {
+      "path": "scripts/validate_m1_03_acceptance.py",
+      "rule": "C901",
+      "symbol": "validate_offline_surface",
+      "diagnostic": "`validate_offline_surface` is too complex",
+      "measured": 11,
+      "count": 1
+    },
+    {
+      "path": "scripts/validate_m1_03_acceptance.py",
+      "rule": "C901",
+      "symbol": "validate_transport_matrix",
+      "diagnostic": "`validate_transport_matrix` is too complex",
+      "measured": 11,
+      "count": 1
+    },
+    {
+      "path": "scripts/validate_m1_06_conformance.py",
+      "rule": "C901",
+      "symbol": "validate_artifact",
+      "diagnostic": "`validate_artifact` is too complex",
+      "measured": 18,
+      "count": 1
+    },
+    {
+      "path": "scripts/validate_scope_policy.py",
+      "rule": "C901",
+      "symbol": "validate_read_only_wire_surface",
+      "diagnostic": "`validate_read_only_wire_surface` is too complex",
+      "measured": 12,
+      "count": 1
+    }
+  ]
+}

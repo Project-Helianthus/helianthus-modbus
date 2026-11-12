@@ -141,7 +141,7 @@ EXPECTED_POLICY = {
             "f64e579546bb49c22cdc092cae63d297d846e7e0d31aa46a91bddacc20b69092"
         ),
         "scripts/validate_m1_03_acceptance.py": (
-            "6d55e765417fa4b75530a7657e8b7c549051da584593904899a9531674a3e6cc"
+            "6aac2592b38a1d1fc8c44026d101dca32e3cb1ef47dad370679a0acd0e353465"
         ),
         "scripts/validate_m1_04_acceptance.py": (
             "67eefbf1db0b90cf172e627ad9c21a1a6641d8231500504d7f3b3e9f55d93add"

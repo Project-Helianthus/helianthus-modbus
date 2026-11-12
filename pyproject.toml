@@ -1,0 +1,11 @@
+[tool.ruff]
+required-version = "==0.15.10"
+
+[tool.ruff.lint]
+select = ["N", "C90", "PLR0915"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.pylint]
+max-statements = 50
